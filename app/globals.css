@@ -1,26 +1,16 @@
 :root {
   color-scheme: light;
-  --ink: #12233d;
-  --ink-soft: #4a5b73;
-  --paper: #f3f6f8;
-  --panel: #ffffff;
-  --line: #dbe3ea;
-  --bar: #12233d;
-  --bar-ink: #ffffff;
-  --bar-soft: #b9c6d8;
-  /* Categorical slots (validated for color-vision deficiency, light surface). Always assigned in this order. */
-  --s1: #c0303a;
-  --s2: #0b8f7f;
-  --s3: #b87a12;
-  --s4: #5a5fd0;
-  --neutral: #8a96a6;
-  --neutral-soft: #c5cfda;
-  --risk: #c0303a;
-  --ok: #0b8f7f;
-  --watch: #b87a12;
-  --callout: #f6ecd9;
-  --gold: #a9762f;
-  --danger-bg: #fdf1f2;
+  --ink: #1b1915; --ink-soft: #6b6252; --paper: #f6f1e7; --panel: #fffdf8; --line: #e7dcc6;
+  --bar: #161411; --bar-ink: #fffdf8; --bar-soft: #c9b48a; --brand: #f0c864; --primary: #1b1915; --primary-ink: #f0c864;
+  /* Brand slots, always assigned in this order: black, gold, yellow, nude. "-text" is the label color on that fill. */
+  --s1: #1b1915; --s1-text: #f6f1e7;
+  --s2: #b8860b; --s2-text: #ffffff;
+  --s3: #edc449; --s3-text: #1b1915;
+  --s4: #a07e5a; --s4-text: #ffffff;
+  --neutral: #e6d6bf; --neutral-text: #1b1915;
+  --neutral-soft: #6b6252; --neutral-soft-text: #ffffff;
+  --risk: #1b1915; --ok: #c9a27e; --watch: #d9a521;
+  --callout: #f8eccb; --gold: #a87b10; --danger-bg: #fbf1dc;
   --font-serif-stack: "Source Serif 4", Georgia, serif;
   --font-sans-stack: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
   --font-mono-stack: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -29,18 +19,30 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --ink: #e9edf2; --ink-soft: #a9b6c6; --paper: #0f1720; --panel: #161f2b; --line: #28323f;
-    --bar: #0b121b; --bar-ink: #e9edf2; --bar-soft: #8e9bb0;
-    --s1: #e0555e; --s2: #1fa090; --s3: #b88325; --s4: #7c80ea; --neutral: #6b7787; --neutral-soft: #3a4655;
-    --risk: #e0555e; --ok: #1fa090; --watch: #d6a75a; --callout: #2a2216; --gold: #d6a75a; --danger-bg: #2a1518;
+    --ink: #f3ead8; --ink-soft: #b4a78f; --paper: #12100d; --panel: #1c1915; --line: #342d24;
+    --bar: #0a0908; --bar-ink: #f3ead8; --bar-soft: #b4a78f; --brand: #f0c864; --primary: #f0c864; --primary-ink: #12100d;
+    --s1: #efe5d2; --s1-text: #12100d;
+    --s2: #b8860b; --s2-text: #12100d;
+    --s3: #f0c864; --s3-text: #12100d;
+    --s4: #9c7b58; --s4-text: #fffdf8;
+    --neutral: #4a4135; --neutral-text: #f3ead8;
+    --neutral-soft: #d8c3a5; --neutral-soft-text: #12100d;
+    --risk: #efe5d2; --ok: #9c7b58; --watch: #d9a521;
+    --callout: #261f12; --gold: #d9a521; --danger-bg: #241d12;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ink: #e9edf2; --ink-soft: #a9b6c6; --paper: #0f1720; --panel: #161f2b; --line: #28323f;
-  --bar: #0b121b; --bar-ink: #e9edf2; --bar-soft: #8e9bb0;
-  --s1: #e0555e; --s2: #1fa090; --s3: #b88325; --s4: #7c80ea; --neutral: #6b7787; --neutral-soft: #3a4655;
-  --risk: #e0555e; --ok: #1fa090; --watch: #d6a75a; --callout: #2a2216; --gold: #d6a75a; --danger-bg: #2a1518;
+  --ink: #f3ead8; --ink-soft: #b4a78f; --paper: #12100d; --panel: #1c1915; --line: #342d24;
+  --bar: #0a0908; --bar-ink: #f3ead8; --bar-soft: #b4a78f; --brand: #f0c864; --primary: #f0c864; --primary-ink: #12100d;
+  --s1: #efe5d2; --s1-text: #12100d;
+  --s2: #b8860b; --s2-text: #12100d;
+  --s3: #f0c864; --s3-text: #12100d;
+  --s4: #9c7b58; --s4-text: #fffdf8;
+  --neutral: #4a4135; --neutral-text: #f3ead8;
+  --neutral-soft: #d8c3a5; --neutral-soft-text: #12100d;
+  --risk: #efe5d2; --ok: #9c7b58; --watch: #d9a521;
+  --callout: #261f12; --gold: #d9a521; --danger-bg: #241d12;
 }
 
 * { box-sizing: border-box; }
@@ -58,12 +60,12 @@ img { max-width: 100%; }
 .appbar-inner { max-width: 1180px; margin: 0 auto; padding: 10px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .appbar-brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .appbar-brand img { width: 36px; height: 48px; object-fit: contain; flex: none; }
-.appbar-brand .clinic { font-size: .7rem; letter-spacing: .1em; color: #f0c864; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar-brand .clinic { font-size: .7rem; letter-spacing: .1em; color: var(--brand); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .appbar-brand .app { font-family: var(--font-serif-stack); font-size: 1.15rem; font-weight: 600; white-space: nowrap; }
 .appbar-actions { display: flex; gap: 8px; flex: none; }
 
 .btn { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid transparent; font-weight: 600; font-size: .88rem; cursor: pointer; white-space: nowrap; }
-.btn-primary { background: var(--s1); color: #fff; }
+.btn-primary { background: var(--primary); color: var(--primary-ink); }
 .btn-primary:hover { filter: brightness(1.08); }
 .btn-ghost { background: transparent; color: var(--bar-ink); border-color: rgba(255,255,255,.35); }
 .btn-ghost:hover { background: rgba(255,255,255,.08); }
@@ -76,8 +78,8 @@ img { max-width: 100%; }
 
 /* Upload */
 .dropzone { background: var(--panel); border: 2px dashed var(--neutral-soft); padding: 28px; display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; transition: border-color .15s, background .15s; }
-.dropzone.dragging { border-color: var(--s1); background: var(--danger-bg); }
-.dropzone .drop-icon { width: 56px; height: 56px; display: grid; place-items: center; background: var(--paper); color: var(--s1); border-radius: 12px; }
+.dropzone.dragging { border-color: var(--watch); background: var(--danger-bg); }
+.dropzone .drop-icon { width: 56px; height: 56px; display: grid; place-items: center; background: var(--paper); color: var(--gold); border-radius: 12px; }
 .dropzone h2 { margin: 0 0 4px; }
 .dropzone p { margin: 0; color: var(--ink-soft); font-size: .92rem; max-width: 70ch; }
 .dropzone .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; align-items: center; }
@@ -125,6 +127,9 @@ section { margin-bottom: 40px; }
 h2 { font-family: var(--font-serif-stack); font-weight: 600; font-size: 1.15rem; margin: 0 0 4px; }
 .section-note { color: var(--ink-soft); font-size: .85rem; margin: 0 0 16px; max-width: 75ch; }
 .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; }
+.group-row td { font-weight: 600; }
+.sub-row td { color: var(--ink-soft); }
+.sub-row td.name { padding-left: 26px; white-space: nowrap; }
 .grid-2.flip { grid-template-columns: 1fr 1.3fr; }
 .grid-even { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .panel { background: var(--panel); border: 1px solid var(--line); padding: 18px 20px 14px; min-width: 0; }
@@ -158,14 +163,14 @@ tr:last-child td { border-bottom: none; }
 
 /* Mix bar */
 .mix-bar { display: flex; height: 34px; overflow: hidden; border-radius: 4px; gap: 2px; background: var(--panel); }
-.mix-bar span { display: flex; align-items: center; padding-left: 10px; font-family: var(--font-mono-stack); font-size: .8rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; min-width: 2px; }
+.mix-bar span { display: flex; align-items: center; padding-left: 10px; font-family: var(--font-mono-stack); font-size: .8rem; font-weight: 600; white-space: nowrap; overflow: hidden; min-width: 2px; }
 .mix-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: .8rem; color: var(--ink-soft); }
 .mix-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .mix-legend b { color: var(--ink); font-weight: 600; }
 
 /* CEO briefing */
 .brief { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--ink); padding: 22px 22px 18px; }
-.tag { display: inline-block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--s1); font-weight: 600; margin-bottom: 8px; }
+.tag { display: inline-block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--gold); font-weight: 600; margin-bottom: 8px; }
 .brief .panel { margin-bottom: 22px; }
 .findings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
 .finding { border: 1px solid var(--line); padding: 14px 16px; background: var(--paper); }
@@ -179,7 +184,7 @@ tr:last-child td { border-bottom: none; }
 .finding.ok .label svg { color: var(--ok); }
 .finding.watch .label svg { color: var(--watch); }
 .decisions td { font-family: var(--font-sans-stack); font-size: .85rem; line-height: 1.45; }
-.decisions td.n { font-family: var(--font-mono-stack); font-weight: 600; color: var(--s1); width: 2.5em; }
+.decisions td.n { font-family: var(--font-mono-stack); font-weight: 600; color: var(--gold); width: 2.5em; }
 .decisions td.measure { color: var(--ink-soft); }
 .decisions-note { font-size: .78rem; color: var(--ink-soft); margin: 10px 0 0; }
 
@@ -213,6 +218,7 @@ footer.source { color: var(--ink-soft); font-size: .76rem; border-top: 1px solid
   h1 { font-size: 1.4rem; }
   .period { text-align: left; }
   .filterbar > label { flex: 1 1 140px; }
+  .filterbar > label:first-child { flex-basis: 100%; }
   .filterbar select, .filterbar input { width: 100%; }
   .filterbar .btn { margin-left: 0; }
   .kpi .value { font-size: 1.25rem; }
@@ -231,9 +237,16 @@ footer.source { color: var(--ink-soft); font-size: .76rem; border-top: 1px solid
 @media print {
   :root, :root:not([data-theme="light"]) {
     color-scheme: light;
-    --ink: #12233d; --ink-soft: #4a5b73; --paper: #ffffff; --panel: #ffffff; --line: #dbe3ea;
-    --s1: #c0303a; --s2: #0b8f7f; --s3: #b87a12; --s4: #5a5fd0; --neutral: #8a96a6; --neutral-soft: #c5cfda;
-    --risk: #c0303a; --ok: #0b8f7f; --watch: #b87a12; --callout: #f6ecd9; --gold: #a9762f; --danger-bg: #fdf1f2;
+    --ink: #1b1915; --ink-soft: #6b6252; --paper: #ffffff; --panel: #fffdf8; --line: #e7dcc6;
+    --bar: #161411; --bar-ink: #fffdf8; --bar-soft: #c9b48a; --brand: #f0c864; --primary: #1b1915; --primary-ink: #f0c864;
+    --s1: #1b1915; --s1-text: #f6f1e7;
+    --s2: #b8860b; --s2-text: #ffffff;
+    --s3: #edc449; --s3-text: #1b1915;
+    --s4: #a07e5a; --s4-text: #ffffff;
+    --neutral: #e6d6bf; --neutral-text: #1b1915;
+    --neutral-soft: #6b6252; --neutral-soft-text: #ffffff;
+    --risk: #1b1915; --ok: #c9a27e; --watch: #d9a521;
+    --callout: #f8eccb; --gold: #a87b10; --danger-bg: #fbf1dc;
   }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .appbar, .no-print { display: none !important; }

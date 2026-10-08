@@ -48,7 +48,7 @@ const SALES_FIELDS: FieldSpec = {
   date: ["Date", "Transaction Date", "Date/Time", "Date Time", "Visit Date"],
   transaction: ["Transaction No.", "Transaction Number", "Trans No.", "OR No.", "OR Number", "Invoice No.", "Receipt No."],
   patient: ["Patient Name", "Patient", "Name of Patient", "Name"],
-  patientType: ["Patient Type", "Type"],
+  patientType: ["Patient Type", "Type", "Patient Classification Type"],
   status: ["Status", "Payment Status", "Transaction Status"],
   source: ["Source", "Referral Source", "Patient Source", "How did you hear about us"],
   service: ["Test Examination", "Test/Examination", "Examination", "Test", "Procedure", "Service", "Item", "Description", "Particulars"],
@@ -253,6 +253,12 @@ export function downloadTemplate() {
     ["09/01/2026 9:15 AM", "TRX-0001", "Juan Dela Cruz", "NEW", "PAID", "Doctor's Referral", "Dr. Maria Santos", "ECHO", "2D Echo with Doppler", "SENIOR", 3500, 700, 2800],
     ["09/01/2026 9:15 AM", "TRX-0001", "Juan Dela Cruz", "NEW", "PAID", "Doctor's Referral", "Dr. Maria Santos", "LABORATORY", "Lipid Profile", "SENIOR", 900, 180, 720],
     ["09/01/2026 10:40 AM", "TRX-0002", "Ana Reyes", "HMO/NEW", "PAID", "Facebook", "", "ECG", "12-Lead ECG", "REGULAR", 450, 0, 450],
+    ["09/01/2026 11:05 AM", "TRX-0003", "Pedro Garcia", "SCHEDULED", "PAID", "Family/Relatives", "", "CARDIOVASCULAR", "Treadmill Stress Test", "REGULAR", 2800, 0, 2800],
+    ["09/01/2026 1:20 PM", "TRX-0004", "Rosa Mendoza", "WALK-IN", "PAID", "Passed By", "", "LABORATORY", "CBC", "PWD", 350, 70, 280],
+    ["09/01/2026 2:00 PM", "TRX-0005", "Carlos Ramos", "HMO", "PAID", "Doctor's Referral", "Dr. Maria Santos", "ECHO", "2D Echo with Doppler", "REGULAR", 3500, 0, 3500],
+    ["09/01/2026 3:10 PM", "TRX-0006", "Lita Navarro", "HOME SERVICE", "PAID", "Family/Relatives", "", "LABORATORY", "Lipid Profile", "SENIOR", 900, 180, 720],
+    ["09/01/2026 3:30 PM", "TRX-0007", "Partner Clinic Sample 1", "SEND-IN", "PAID", "", "", "LABORATORY", "FBS", "REGULAR", 200, 0, 200],
+    ["09/01/2026 4:00 PM", "TRX-0008", "Trial Participant 014", "CLINICAL TRIAL", "PAID", "", "", "ECG", "12-Lead ECG", "REGULAR", 450, 0, 450],
   ];
   const concierge = [
     ["Date", "Patient Name", "Channel", "Branch", "Procedure", "Status", "Follow-up Date", "Remarks"],

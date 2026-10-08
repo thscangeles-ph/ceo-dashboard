@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, ClipboardList, Download, FileSpreadsheet, Printer, RefreshCw, ShieldCheck, Smartphone, Upload } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
-import { Briefing, DailyVolume, Funnel, Kpis, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
+import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
 import type { Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
-import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isNewType, isPaid, longDate } from "@/lib/analyze";
+import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isPaid, longDate, matchesType, PATIENT_TYPES, patientTypeInfo } from "@/lib/analyze";
 import type { InquiryRow, SalesRow, SheetSummary } from "@/lib/parse";
 import { downloadTemplate, parseWorkbooks } from "@/lib/parse";
 
@@ -14,7 +14,6 @@ declare global {
   interface Window { launchQueue?: { setConsumer: (consumer: (params: LaunchParams) => void) => void } }
 }
 
-const PATIENT_TYPE_LABEL: Record<PatientTypeFilter, string> = { new: "NEW + HMO/NEW", cash: "NEW", hmo: "HMO/NEW", all: "All" };
 const EXCEL = /\.(xlsx|xlsm|xls)$/i;
 const toInputDate = (date: Date | null) => (date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` : "");
 
@@ -26,7 +25,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [filters, setFilters] = useState<Filters>({ patientType: "new", status: "paid", from: "", to: "" });
+  const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
 
   const processFiles = useCallback(async (incoming: File[]) => {
     const excelFiles = incoming.filter((file) => EXCEL.test(file.name));
@@ -49,7 +48,7 @@ export default function Home() {
         return Array.from(merged.values());
       });
       setFilters({
-        patientType: nextSales.some((row) => isNewType(row.patientType)) ? "new" : "all",
+        patientType: "all",
         status: nextSales.some((row) => isPaid(row.status)) ? "paid" : "all",
         from: "", to: "",
       });
@@ -73,10 +72,14 @@ export default function Home() {
     });
   }, []);
 
-  const reset = () => { setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "new", status: "paid", from: "", to: "" }); };
+  const reset = () => { setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); };
 
   const hasTypes = sales.some((row) => row.patientType);
-  const hasNew = sales.some((row) => isNewType(row.patientType));
+  // Unique patients per patient-type option, shown in the filter so empty types are obvious.
+  const typeCounts = useMemo(() => {
+    const base = applyFilters(sales, { ...filters, patientType: "all" });
+    return Object.fromEntries(PATIENT_TYPES.map((t) => [t.key, new Set(base.filter((row) => matchesType(t.key, row.patientType)).map((row) => row.patient)).size])) as Record<PatientTypeFilter, number>;
+  }, [sales, filters]);
   const hasPaid = sales.some((row) => isPaid(row.status));
   const filtered = useMemo(() => applyFilters(sales, filters), [sales, filters]);
   const summary = useMemo(() => (filtered.length ? analyzeSales(filtered) : null), [filtered]);
@@ -91,7 +94,7 @@ export default function Home() {
   const period = summary?.minDate && summary.maxDate
     ? summary.minDate.toDateString() === summary.maxDate.toDateString() ? longDate(summary.minDate) : `${longDate(summary.minDate)} – ${longDate(summary.maxDate)}`
     : "—";
-  const newOnly = filters.patientType !== "all";
+  const typeInfo = patientTypeInfo(filters.patientType);
   const salesSheets = sheets.filter((sheet) => sheet.kind === "sales");
   const columns = new Set(salesSheets.flatMap((sheet) => sheet.columns));
   const gaps = [
@@ -168,7 +171,7 @@ export default function Home() {
               </div>
               <div className="period">
                 Reporting period<br /><strong>{period}</strong>
-                <div className="filters-note">{hasTypes ? `Patient type: ${PATIENT_TYPE_LABEL[filters.patientType]}` : "All patient types"}{hasPaid ? ` · Status: ${filters.status === "paid" ? "PAID" : "All"}` : ""}</div>
+                <div className="filters-note">{hasTypes ? `Patient type: ${typeInfo.short}` : "All patient types"}{hasPaid ? ` · Status: ${filters.status === "paid" ? "PAID" : "All"}` : ""}</div>
               </div>
             </header>
 
@@ -176,10 +179,7 @@ export default function Home() {
               {hasTypes && (
                 <label>Patient type
                   <select value={filters.patientType} onChange={(e) => setFilter("patientType", e.target.value as PatientTypeFilter)}>
-                    {hasNew && <option value="new">New (NEW + HMO/NEW)</option>}
-                    {hasNew && <option value="cash">NEW only</option>}
-                    {hasNew && <option value="hmo">HMO/NEW only</option>}
-                    <option value="all">All patient types</option>
+                    {PATIENT_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label} · {count(typeCounts[t.key])}</option>)}
                   </select>
                 </label>
               )}
@@ -197,7 +197,8 @@ export default function Home() {
 
             {summary ? (
               <>
-                <Kpis s={summary} newOnly={newOnly && hasTypes} />
+                <Kpis s={summary} typeKey={hasTypes ? filters.patientType : "all"} />
+                {hasTypes && filters.patientType === "all" && <PatientTypes s={summary} />}
                 <section><Briefing s={summary} findings={findings} decisions={decisions} period={period} /></section>
                 {funnel && <Funnel q={funnel} />}
                 <DailyVolume s={summary} />
@@ -206,7 +207,7 @@ export default function Home() {
                 <Physicians s={summary} />
                 <StillOpen gaps={gaps} />
                 <footer className="source">
-                  Source: {salesSheets.map((sheet) => sheet.file).filter((f, i, all) => all.indexOf(f) === i).join(", ")}{hasTypes ? `, Patient Type = ${PATIENT_TYPE_LABEL[filters.patientType]}` : ""}{hasPaid && filters.status === "paid" ? ", Status = PAID" : ""}, {period} ({count(summary.lineItems)} billed line items across {count(summary.visits)} visits). Patient names are used only to count unique patients and are never shown from the sales report.
+                  Source: {salesSheets.map((sheet) => sheet.file).filter((f, i, all) => all.indexOf(f) === i).join(", ")}{hasTypes ? `, Patient Type = ${typeInfo.short}` : ""}{hasPaid && filters.status === "paid" ? ", Status = PAID" : ""}, {period} ({count(summary.lineItems)} billed line items across {count(summary.visits)} visits). Patient names are used only to count unique patients and are never shown from the sales report.
                 </footer>
               </>
             ) : (

@@ -30,7 +30,8 @@ export function MixBar({ parts, label }: { parts: { key: string; label: string; 
       <div className="mix-bar" role="img" aria-label={`${label}: ${parts.map((p) => `${p.label} ${((p.value / total) * 100).toFixed(1)} percent`).join(", ")}`}>
         {parts.map((p) => {
           const share = (p.value / total) * 100;
-          return <span key={p.key} title={`${p.label}: ${peso(p.value)} (${share.toFixed(1)}%)`} style={{ width: `${share}%`, background: p.color }}>{share >= 11 ? `${share.toFixed(1)}%` : ""}</span>;
+          // Each slot has a matching "-text" token so labels stay readable on black, gold and nude fills.
+          return <span key={p.key} title={`${p.label}: ${peso(p.value)} (${share.toFixed(1)}%)`} style={{ width: `${share}%`, background: p.color, color: p.color.replace(/\)$/, "-text)") }}>{share >= 11 ? `${share.toFixed(1)}%` : ""}</span>;
         })}
       </div>
       <div className="mix-legend">
@@ -50,7 +51,7 @@ export function DailyChart({ data, metric }: { data: { label: string; patients: 
           <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval="preserveStartEnd" minTickGap={8} />
           <YAxis tick={axisTick} tickLine={false} axisLine={false} width={isRevenue ? 48 : 28} allowDecimals={false} tickFormatter={isRevenue ? compactPeso : undefined} />
           <Tooltip cursor={{ fill: "var(--line)", opacity: 0.4 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(value) => (isRevenue ? [peso(Number(value)), "Revenue"] : [count(Number(value)), "Patients"])} />
-          <Bar dataKey={metric} fill={isRevenue ? "var(--s1)" : "var(--s2)"} radius={[4, 4, 0, 0]} maxBarSize={36} />
+          <Bar dataKey={metric} fill={isRevenue ? "var(--s2)" : "var(--s1)"} radius={[4, 4, 0, 0]} maxBarSize={36} />
         </BarChart>
       </ResponsiveContainer>
     </div>

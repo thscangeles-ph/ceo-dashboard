@@ -9,21 +9,61 @@ export const longDate = (date: Date) => date.toLocaleDateString("en-PH", { month
 const dayKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const weekday = (date: Date) => date.toLocaleDateString("en-PH", { weekday: "long" });
 
-export type PatientTypeFilter = "new" | "cash" | "hmo" | "all";
+/** How a raw Patient Type value from the sales report is grouped. */
+export type TypeGroup = "new" | "scheduled" | "walkin" | "hmo" | "returning" | "home" | "sendin" | "trial" | "other";
+export function typeGroup(raw: string): TypeGroup {
+  const t = normalize(raw).replace(/[\s_-]+/g, " ");
+  if (/^(NEW|HMO ?\/? ?NEW|NEW ?\/? ?HMO)$/.test(t)) return "new";
+  if (/SCHED/.test(t)) return "scheduled";
+  if (/WALK ?IN/.test(t)) return "walkin";
+  if (/^HMO\b/.test(t)) return "hmo";
+  if (/HOME/.test(t)) return "home";
+  if (/SEND ?IN/.test(t)) return "sendin";
+  if (/CLINICAL|TRIAL/.test(t)) return "trial";
+  if (/RETURN|OLD|FOLLOW/.test(t)) return "returning";
+  return "other";
+}
+const RETURNING: TypeGroup[] = ["scheduled", "walkin", "hmo", "returning"];
+
+/** The patient types the dashboard can be filtered to, in display order. */
+export const PATIENT_TYPES = [
+  { key: "all", label: "All patient types", short: "All", groups: null },
+  { key: "new", label: "NEW (NEW + HMO/NEW)", short: "NEW", groups: ["new"] },
+  { key: "returning", label: "Returning patients (Scheduled + Walk-in + HMO)", short: "Returning", groups: RETURNING },
+  { key: "scheduled", label: "Scheduled (returning)", short: "Scheduled", groups: ["scheduled"] },
+  { key: "walkin", label: "Walk-in (returning)", short: "Walk-in", groups: ["walkin"] },
+  { key: "home", label: "Home service", short: "Home service", groups: ["home"] },
+  { key: "sendin", label: "Send-in", short: "Send-in", groups: ["sendin"] },
+  { key: "trial", label: "Clinical trial", short: "Clinical trial", groups: ["trial"] },
+] as const satisfies readonly { key: string; label: string; short: string; groups: readonly TypeGroup[] | null }[];
+export type PatientTypeFilter = (typeof PATIENT_TYPES)[number]["key"];
+export const patientTypeInfo = (key: PatientTypeFilter) => PATIENT_TYPES.find((t) => t.key === key)!;
+export const matchesType = (key: PatientTypeFilter, raw: string) => {
+  const groups = patientTypeInfo(key).groups as readonly TypeGroup[] | null;
+  return !groups || groups.includes(typeGroup(raw));
+};
 export type StatusFilter = "paid" | "all";
 export type Filters = { patientType: PatientTypeFilter; status: StatusFilter; from: string; to: string };
 
-export const isNewType = (type: string) => /^(NEW|HMO ?\/? ?NEW)$/.test(type);
+/** Type rows of the "patients by type" table; HMO stays its own line inside Returning. */
+const TYPE_ROWS: { key: TypeGroup; label: string; returning?: boolean }[] = [
+  { key: "new", label: "NEW (incl. HMO/NEW)" },
+  { key: "scheduled", label: "Scheduled", returning: true },
+  { key: "walkin", label: "Walk-in", returning: true },
+  { key: "hmo", label: "HMO", returning: true },
+  { key: "returning", label: "Other returning", returning: true },
+  { key: "home", label: "Home service" },
+  { key: "sendin", label: "Send-in" },
+  { key: "trial", label: "Clinical trial" },
+  { key: "other", label: "Other / not recorded" },
+];
 export const isPaid = (status: string) => /PAID|COMPLETE|POSTED|SETTLED/.test(status) && !/UNPAID|NOT PAID|CANCEL|VOID|REFUND/.test(status);
 
 export function applyFilters(rows: SalesRow[], filters: Filters) {
   const from = filters.from ? new Date(`${filters.from}T00:00:00`) : null;
   const to = filters.to ? new Date(`${filters.to}T23:59:59`) : null;
   return rows.filter((row) => {
-    const type = row.patientType;
-    if (filters.patientType === "new" && !isNewType(type)) return false;
-    if (filters.patientType === "cash" && type !== "NEW") return false;
-    if (filters.patientType === "hmo" && !(isNewType(type) && type !== "NEW")) return false;
+    if (!matchesType(filters.patientType, row.patientType)) return false;
     if (filters.status === "paid" && !isPaid(row.status)) return false;
     if (from && row.date && row.date < from) return false;
     if (to && row.date && row.date > to) return false;
@@ -155,7 +195,25 @@ export function analyzeSales(rows: SalesRow[]) {
   }
   const physicians = Array.from(physicianMap.values()).map((p) => ({ name: p.name, patients: p.patients.size, revenue: p.revenue })).sort((a, b) => b.revenue - a.revenue);
 
+  // Patient-type mix. A patient seen as two types in the period counts once in each.
+  const typeMap = new Map<TypeGroup, { patients: Set<string>; visits: Set<string>; revenue: number }>();
+  for (const row of rows) {
+    const key = typeGroup(row.patientType);
+    const t = typeMap.get(key) || { patients: new Set<string>(), visits: new Set<string>(), revenue: 0 };
+    t.patients.add(row.patient); t.visits.add(row.transaction || `${row.patient}|${row.date ? dayKey(row.date) : ""}`); t.revenue += row.revenue;
+    typeMap.set(key, t);
+  }
+  const types = TYPE_ROWS.map((t) => {
+    const v = typeMap.get(t.key);
+    return { ...t, patients: v?.patients.size || 0, visits: v?.visits.size || 0, revenue: v?.revenue || 0 };
+  }).filter((t) => t.patients > 0);
+  const returningPatients = new Set<string>();
+  let returningRevenue = 0;
+  RETURNING.forEach((key) => { const v = typeMap.get(key); if (v) { v.patients.forEach((name) => returningPatients.add(name)); returningRevenue += v.revenue; } });
+
   return {
+    types, returning: { patients: returningPatients.size, revenue: returningRevenue },
+    newPatients: typeMap.get("new")?.patients.size || 0,
     patients: patients.size, visits: visits.size, lineItems: rows.length, revenue, gross, discount,
     avgPerPatient: patients.size ? revenue / patients.size : 0, medianPerPatient: median(perPatient),
     minDate, maxDate, sources, groups, days, services, serviceLabel: hasServiceLine ? "service line" : "test / examination",
@@ -246,6 +304,13 @@ export function buildFindings(s: SalesSummary, q: InquirySummary | null): Findin
         : "open concierge leads. Every inquiry in the log was booked and attended.",
     });
   }
+  if (s.newPatients && s.returning.patients && s.revenue) {
+    const share = s.returning.revenue / s.revenue;
+    findings.push({
+      tone: "ok", label: "New vs. returning", value: `${count(s.newPatients)} / ${count(s.returning.patients)}`,
+      text: `new vs. returning patients (Scheduled, Walk-in, HMO). Returning patients brought ${pct(share)} of revenue (${peso(s.returning.revenue)}); new patients ${pct((s.types.find((t) => t.key === "new")?.revenue || 0) / s.revenue)}.`,
+    });
+  }
   const none = s.groups.find((g) => g.key === "none");
   if (none && none.patients / s.patients >= 0.05) {
     findings.push({ tone: "watch", label: "Source missing", value: pct(none.patients / s.patients, 0), text: `of patients (${count(none.patients)}) have no source recorded, so their revenue can't be credited to a channel.` });
@@ -267,10 +332,11 @@ export function buildDecisions(s: SalesSummary, q: InquirySummary | null): Decis
       measure: `Referral revenue holds at or above ${peso(s.referralRevenue)}; no top-${top.length} doctor drops off`,
     });
   }
-  if (!q || q.inquiries < s.patients * 0.5) {
+  const billed = s.newPatients || s.patients;
+  if (!q || q.inquiries < billed * 0.5) {
     decisions.push({
       decision: "Make concierge logging mandatory for every inquiry, at every branch",
-      why: q ? `Only ${count(q.inquiries)} inquiries were logged against ${count(s.patients)} patients billed. Conversion rates need real volume before they mean anything.` : "No concierge log was uploaded, so the dashboard can't see inquiries that never became paying patients.",
+      why: q ? `Only ${count(q.inquiries)} inquiries were logged against ${count(billed)} ${s.newPatients ? "new " : ""}patients billed. Conversion rates need real volume before they mean anything.` : "No concierge log was uploaded, so the dashboard can't see inquiries that never became paying patients.",
       measure: "Inquiries logged ≈ patients billed, with every branch reporting",
     });
   }

@@ -2,6 +2,7 @@
 
 The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. Upload the Excel export and it generates the CEO Summary Dashboard:
 
+- **Patients by type**: NEW, Returning (Scheduled, Walk-in, HMO), Home service, Send-in and Clinical trial, with patients, visits, revenue and share for each
 - **KPIs**: patients, total revenue, average and median revenue per patient, items per visit, discounts given
 - **CEO briefing**: where revenue came from (by source group), findings computed from the data, and suggested decisions for the next leadership meeting
 - **Full funnel** from the Central Concierge log (when uploaded): inquiries → booked → served, conversion by channel, branch split, leads needing follow-up
@@ -33,7 +34,7 @@ Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the heade
 | Field | Accepted headers (examples) |
 | --- | --- |
 | Visit | `Transaction No.`, `OR No.`, `Invoice No.` |
-| Patient type | `Patient Type` (NEW, HMO/NEW, …) |
+| Patient type | `Patient Type` (see below) |
 | Status | `Status`, `Payment Status` (PAID, UNPAID, …) |
 | Source | `Source`, `Referral Source` |
 | Referring physician | `Referring Physician`, `Referred By`, `Physician`, `Doctor`, `Source Details` |
@@ -46,12 +47,28 @@ Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the heade
 
 **Download template** on the start screen produces a workbook with both sheets and example rows.
 
+### Patient types
+
+The `Patient Type` column is grouped into the types the dashboard filters by:
+
+| Dashboard type | Patient Type values |
+| --- | --- |
+| NEW | `NEW`, `HMO/NEW` |
+| Returning patients | Scheduled + Walk-in + `HMO` |
+| ↳ Scheduled | `SCHEDULED` (returning scheduled patients) |
+| ↳ Walk-in | `WALK-IN` (returning walk-in patients) |
+| Home service | `HOME SERVICE` |
+| Send-in | `SEND-IN` |
+| Clinical trial | `CLINICAL TRIAL` |
+
+Spelling variants such as `WALK IN`, `SEND IN` or `Home Service` are recognized. The filter shows how many patients each type has; **All patient types** is the default.
+
 ### Counting rules
 
 - One unique normalized `Patient Name` = one patient. Sales-report names are only used for counting and are never displayed.
 - Visits = unique `Transaction No.`
 - Each patient is credited to the first source recorded for them, together with all their revenue in the period.
-- Default filters: Patient type = NEW + HMO/NEW and Status = PAID (when those columns exist). Both can be changed, along with a date range.
+- Default filters: all patient types and Status = PAID (when a Status column exists). Both can be changed, along with a date range.
 - Discounts on SENIOR / PWD rows are reported as statutory; any other discount is reported as discretionary.
 - Uploading more files adds to what is loaded. Identical rows are counted once. **Start over** clears everything.
 

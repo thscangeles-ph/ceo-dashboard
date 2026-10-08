@@ -2,7 +2,7 @@
 // without a connection. Only the app's own pages, scripts, styles and icons are cached; workbooks
 // are read in the browser and never pass through here.
 
-const CACHE = "thsc-ceo-dashboard-v1";
+const CACHE = "thsc-ceo-dashboard-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/theheartspecialists.png", "/favicon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

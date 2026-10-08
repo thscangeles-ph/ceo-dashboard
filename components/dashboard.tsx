@@ -1,23 +1,72 @@
 "use client";
 
+import { Fragment } from "react";
 import { AlertTriangle, CheckCircle2, Eye } from "lucide-react";
 import { DailyChart, MixBar, RankedBars, ServiceChart } from "@/components/charts";
-import type { Decision, Finding, InquirySummary, SalesSummary } from "@/lib/analyze";
-import { count, longDate, pct, peso, titleCase } from "@/lib/analyze";
+import type { Decision, Finding, InquirySummary, PatientTypeFilter, SalesSummary } from "@/lib/analyze";
+import { count, longDate, patientTypeInfo, pct, peso, titleCase } from "@/lib/analyze";
 
-const CATEGORY_COLORS: Record<string, string> = { REGULAR: "var(--s2)", SENIOR: "var(--s1)", "SENIOR CITIZEN": "var(--s1)", SC: "var(--s1)", PWD: "var(--s3)" };
+const CATEGORY_COLORS: Record<string, string> = { REGULAR: "var(--s1)", SENIOR: "var(--s2)", "SENIOR CITIZEN": "var(--s2)", SC: "var(--s2)", PWD: "var(--s3)" };
 const categoryColor = (name: string, fallbackIndex: number) => CATEGORY_COLORS[name] || (fallbackIndex === 0 ? "var(--s4)" : "var(--neutral)");
 const TONE_ICON = { risk: AlertTriangle, watch: Eye, ok: CheckCircle2 };
 
-export function Kpis({ s, newOnly }: { s: SalesSummary; newOnly: boolean }) {
+const KPI_PATIENT_LABEL: Record<PatientTypeFilter, string> = { all: "Patients", new: "New patients", returning: "Returning patients", scheduled: "Scheduled patients", walkin: "Walk-in patients", home: "Home service patients", sendin: "Send-in patients", trial: "Clinical trial patients" };
+
+export function Kpis({ s, typeKey }: { s: SalesSummary; typeKey: PatientTypeFilter }) {
+  const all = typeKey === "all";
   return (
     <div className="kpis">
-      <div className="kpi"><div className="label">{newOnly ? "New patients" : "Patients"}</div><div className="value">{count(s.patients)}</div><div className="note">{count(s.visits)} visits</div></div>
-      <div className="kpi"><div className="label">Total revenue</div><div className="value">{peso(s.revenue)}</div><div className="note">{newOnly ? "from new patients only" : "all patient types"}</div></div>
+      <div className="kpi"><div className="label">{KPI_PATIENT_LABEL[typeKey]}</div><div className="value">{count(s.patients)}</div><div className="note">{all && s.newPatients && s.returning.patients ? `${count(s.newPatients)} new · ${count(s.returning.patients)} returning` : `${count(s.visits)} visits`}</div></div>
+      <div className="kpi"><div className="label">Total revenue</div><div className="value">{peso(s.revenue)}</div><div className="note">{all ? `${count(s.visits)} visits, all patient types` : `${patientTypeInfo(typeKey).short} patients only`}</div></div>
       <div className="kpi"><div className="label">Avg. revenue / patient</div><div className="value">{peso(s.avgPerPatient)}</div><div className="note">median {peso(s.medianPerPatient)}</div></div>
       <div className="kpi"><div className="label">Items per visit</div><div className="value">{s.visits ? (s.lineItems / s.visits).toFixed(1) : "—"}</div><div className="note">{count(s.lineItems)} billed line items</div></div>
       <div className="kpi"><div className="label">Discount given</div><div className="value">{peso(s.discount)}</div><div className="note">{s.gross ? `${pct(s.discount / s.gross)} of gross ${peso(s.gross)}` : "no discount column"}</div></div>
     </div>
+  );
+}
+
+const TYPE_MIX = [
+  { key: "new", label: "NEW", color: "var(--s1)" },
+  { key: "returning", label: "Returning (Scheduled, Walk-in, HMO)", color: "var(--s2)" },
+  { key: "home", label: "Home service", color: "var(--s3)" },
+  { key: "sendin", label: "Send-in", color: "var(--s4)" },
+  { key: "trial", label: "Clinical trial", color: "var(--neutral)" },
+  { key: "other", label: "Other / not recorded", color: "var(--neutral-soft)" },
+];
+
+export function PatientTypes({ s }: { s: SalesSummary }) {
+  const mixKey = (key: string, returning?: boolean) => (returning ? "returning" : key);
+  const parts = TYPE_MIX.map((m) => {
+    const rows = s.types.filter((t) => mixKey(t.key, t.returning) === m.key);
+    return { ...m, value: rows.reduce((sum, t) => sum + t.revenue, 0), patients: m.key === "returning" ? s.returning.patients : rows.reduce((sum, t) => sum + t.patients, 0) };
+  }).filter((p) => p.patients > 0);
+  return (
+    <section>
+      <h2>Patients by type</h2>
+      <p className="section-note">NEW includes NEW and HMO/NEW. Returning patients are Scheduled, Walk-in and HMO. A patient seen as two types in the period counts once in each.</p>
+      <div className="panel">
+        <h3>Revenue by patient type ({peso(s.revenue)})</h3>
+        <MixBar label="Revenue by patient type" parts={parts.map((p) => ({ key: p.key, label: p.label, color: p.color, value: p.value, note: `${count(p.patients)} patient${p.patients === 1 ? "" : "s"}` }))} />
+        <div className="table-scroll" style={{ marginTop: 18 }}>
+          <table>
+            <tbody>
+              <tr><th>Patient type</th><th className="num">Patients</th><th className="num">Visits</th><th className="num">Revenue</th><th className="num">Share</th><th className="num">Avg / patient</th></tr>
+              {s.types.map((t, i) => (
+                <Fragment key={t.key}>
+                  {t.returning && !s.types[i - 1]?.returning && (
+                    <tr className="group-row"><td className="name">Returning patients</td><td className="num">{count(s.returning.patients)}</td><td className="num">{count(s.types.filter((x) => x.returning).reduce((sum, x) => sum + x.visits, 0))}</td><td className="num">{peso(s.returning.revenue)}</td><td className="num">{pct(s.returning.revenue / s.revenue)}</td><td className="num">{peso(s.returning.revenue / s.returning.patients)}</td></tr>
+                  )}
+                  <tr className={t.returning ? "sub-row" : undefined}>
+                    <td className="name">{t.returning ? `↳ ${t.label}` : t.label}</td>
+                    <td className="num">{count(t.patients)}</td><td className="num">{count(t.visits)}</td><td className="num">{peso(t.revenue)}</td><td className="num">{pct(t.revenue / s.revenue)}</td><td className="num">{peso(t.revenue / t.patients)}</td>
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -82,11 +131,11 @@ export function Funnel({ q }: { q: InquirySummary }) {
       <div className="grid-2">
         <div className="panel">
           <h3>Inquiry → Booking → Served</h3>
-          <RankedBars label="Funnel" color="var(--s3)" format={(v) => `${count(v)} of ${count(q.inquiries)}`} items={[{ name: "Inquiries", value: q.inquiries }, { name: "Booked", value: q.booked }, { name: "Served (completed)", value: q.served }]} />
+          <RankedBars label="Funnel" color="var(--s2)" format={(v) => `${count(v)} of ${count(q.inquiries)}`} items={[{ name: "Inquiries", value: q.inquiries }, { name: "Booked", value: q.booked }, { name: "Served (completed)", value: q.served }]} />
         </div>
         <div className="panel">
           <h3>Inquiries by branch</h3>
-          <RankedBars label="Inquiries by branch" color="var(--s4)" format={(v) => `${count(v)} inquir${v === 1 ? "y" : "ies"}`} items={q.branches.map((b) => ({ name: b.branch, value: b.inquiries }))} />
+          <RankedBars label="Inquiries by branch" color="var(--s1)" format={(v) => `${count(v)} inquir${v === 1 ? "y" : "ies"}`} items={q.branches.map((b) => ({ name: b.branch, value: b.inquiries }))} />
         </div>
       </div>
       <div className="panel" style={{ marginTop: 18 }}>
@@ -151,7 +200,7 @@ export function Sources({ s }: { s: SalesSummary }) {
       <div className="grid-2 flip">
         <div className="panel">
           <h3>Revenue by source</h3>
-          <RankedBars label="Revenue by source" color="var(--s1)" items={s.sources.slice(0, 10).map((x) => ({ name: x.source, value: x.revenue }))} />
+          <RankedBars label="Revenue by source" color="var(--s2)" items={s.sources.slice(0, 10).map((x) => ({ name: x.source, value: x.revenue }))} />
         </div>
         <div className="panel">
           <h3>Source performance</h3>
@@ -162,7 +211,7 @@ export function Sources({ s }: { s: SalesSummary }) {
                 {s.sources.map((x) => (
                   <tr key={x.source}>
                     <td className="name">{x.source}</td><td className="num">{count(x.patients)}</td>
-                    <td><div className="bar-cell"><span>{peso(x.revenue)}</span><div className="bar-track"><div className="bar-fill" style={{ width: `${(x.revenue / max) * 100}%`, background: "var(--s1)" }} /></div></div></td>
+                    <td><div className="bar-cell"><span>{peso(x.revenue)}</span><div className="bar-track"><div className="bar-fill" style={{ width: `${(x.revenue / max) * 100}%`, background: "var(--s2)" }} /></div></div></td>
                     <td className="num">{peso(x.avg)}</td>
                   </tr>
                 ))}
