@@ -1,0 +1,28 @@
+{
+  "id": "/",
+  "name": "THSC CEO Dashboard",
+  "short_name": "CEO Dashboard",
+  "description": "Upload THSC Excel reports to generate the CEO summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f6f8",
+  "theme_color": "#12233d",
+  "categories": ["business", "medical", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+        "application/vnd.ms-excel": [".xls"]
+      }
+    }
+  ]
+}
