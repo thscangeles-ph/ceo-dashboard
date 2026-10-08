@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, ClipboardList, Download, FileSpreadsheet, Printer, RefreshCw, ShieldCheck, Smartphone, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, ClipboardList, Download, FileSpreadsheet, MousePointerClick, Printer, RefreshCw, ShieldCheck, Smartphone, Upload } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
+import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
-import type { Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
+import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
 import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isPaid, longDate, matchesType, PATIENT_TYPES, patientTypeInfo } from "@/lib/analyze";
 import type { InquiryRow, SalesRow, SheetSummary } from "@/lib/parse";
 import { downloadTemplate, parseWorkbooks } from "@/lib/parse";
@@ -25,6 +26,8 @@ export default function Home() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
 
   const processFiles = useCallback(async (incoming: File[]) => {
@@ -110,6 +113,7 @@ export default function Home() {
   const hasData = sales.length > 0 || inquiries.length > 0;
 
   return (
+    <DrillProvider value={setDrill}>
     <main onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setDragging(false); void processFiles(Array.from(e.dataTransfer.files)); }}>
       <div className="appbar">
         <div className="appbar-inner">
@@ -194,6 +198,7 @@ export default function Home() {
               <label>From<input type="date" value={filters.from} min={toInputDate(allDates?.min ?? null)} max={toInputDate(allDates?.max ?? null)} onChange={(e) => setFilter("from", e.target.value)} /></label>
               <label>To<input type="date" value={filters.to} min={toInputDate(allDates?.min ?? null)} max={toInputDate(allDates?.max ?? null)} onChange={(e) => setFilter("to", e.target.value)} /></label>
             </div>
+            <p className="click-hint no-print"><MousePointerClick size={15} aria-hidden />Click any card, bar, segment or row to see the records behind it.</p>
 
             {summary ? (
               <>
@@ -223,6 +228,8 @@ export default function Home() {
           </>
         )}
       </div>
+      <DrillPanel drill={drill} onClose={closeDrill} context={[period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
     </main>
+    </DrillProvider>
   );
 }

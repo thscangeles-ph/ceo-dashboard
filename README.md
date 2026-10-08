@@ -7,9 +7,11 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **CEO briefing**: where revenue came from (by source group), findings computed from the data, and suggested decisions for the next leadership meeting
 - **Full funnel** from the Central Concierge log (when uploaded): inquiries → booked → served, conversion by channel, branch split, leads needing follow-up
 - **Daily volume**: patients and revenue per day
-- **Where patients come from**: revenue, patients and average per patient by source
+- **Where new patients come from**: revenue, patients and average per patient by source (NEW and HMO/NEW only, since returning patients have no source)
 - **Revenue mix**: by service line (department) and by patient category (Regular, Senior, PWD)
 - **Top referring physicians**
+
+**Everything is clickable.** Click a KPI card, chart bar, bar segment, legend item, finding or table row to open a details panel with the records behind that number: patients, visits, revenue, breakdowns by patient type and service, and the billed line items, which can be downloaded as Excel. Patient names are not shown for sales data.
 
 Marketing spend and acquisition cost are **not** part of this app. They live in the separate THSC Patient Acquisition Dashboard.
 
@@ -67,7 +69,7 @@ Spelling variants such as `WALK IN`, `SEND IN` or `Home Service` are recognized.
 
 - One unique normalized `Patient Name` = one patient. Sales-report names are only used for counting and are never displayed.
 - Visits = unique `Transaction No.`
-- Each patient is credited to the first source recorded for them, together with all their revenue in the period.
+- Source is only recorded for NEW patients (NEW and HMO/NEW). Source charts use new patients only, and blank or `N/A` values are ignored. Each new patient is credited to the first source recorded for them, with all their revenue in the period.
 - Default filters: all patient types and Status = PAID (when a Status column exists). Both can be changed, along with a date range.
 - Discounts on SENIOR / PWD rows are reported as statutory; any other discount is reported as discretionary.
 - Uploading more files adds to what is loaded. Identical rows are counted once. **Start over** clears everything.
