@@ -16,13 +16,37 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 
 Marketing spend and acquisition cost are **not** part of this app. They live in the separate THSC Patient Acquisition Dashboard.
 
-Workbooks are processed in the browser and never uploaded to a server. There is no database, and no environment variables are needed.
+Out of the box, workbooks are processed in the browser and never uploaded to a server, and no environment variables are needed. Connect Supabase (see **Accounts and shared data**) to add logins and share the data across the team.
 
 ## Data stays saved on the device
 
 The latest uploads and every inquiry logged or updated in the app are saved on the device (in the browser's IndexedDB), so the dashboard is still there after a refresh or closing the app. The bar under the header shows when it was last saved. Untick **Keep on this device** on shared computers, and **Start over** clears everything.
 
 This storage belongs to that one browser on that one device. To see the same data on every phone and computer, the app needs accounts and a cloud database (for example Supabase), with Data Privacy Act safeguards for patient information.
+
+## Accounts and shared data (Supabase)
+
+With Supabase connected, everyone signs in, and the whole team shares one set of data on every computer and phone. Without it, the app keeps working on each device only (above).
+
+**One-time setup**
+
+1. **Create the tables.** In Supabase open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
+2. **Lock sign-ups.** In **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**, so only people you add can get in.
+3. **Set the app address.** In **Authentication → URL Configuration**, set **Site URL** to the Vercel address of this app (for example `https://ceo-dashboard.vercel.app`) and add it under **Redirect URLs**. Invite and password-reset emails link there.
+4. **Connect the app.** In **Project Settings → API** copy the **Project URL** and the **anon / publishable** key. In Vercel open **Project → Settings → Environment Variables** and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then **redeploy** (Deployments → ⋯ → Redeploy). Never use the `service_role` / secret key.
+5. **Create your own login.** In **Authentication → Users → Add user → Create new user**, enter your email and a password and tick **Auto confirm user**.
+6. **Make yourself admin.** Back in the SQL Editor run, with your email:
+   ```sql
+   update public.profiles set role = 'admin' where email = 'you@example.com';
+   ```
+7. Open the app, sign in, and if the device still holds data from before, click **Move to shared**.
+
+**Adding people**
+
+1. Supabase → **Authentication → Users → Add user**: **Send invitation** (they choose their own password from the email) or **Create new user** with a temporary password and **Auto confirm user** ticked.
+2. In the app, open **Team** and set their access: **Staff** (Patient CRM only) or **Admin** (everything, including sales and Team). New logins have no access until you do this.
+
+Access is enforced by the database (Row Level Security), not only by the screens: staff cannot read sales data or change roles, and people without a role see nothing. Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets access with the clinic's Data Protection Officer, and sign out on shared computers.
 
 ## Working CRM
 
@@ -107,4 +131,4 @@ Open `http://localhost:3000`. The service worker only registers in production bu
 1. In Vercel, choose **Add New → Project** and import `thscangeles-ph/ceo-dashboard`.
 2. Vercel detects **Next.js** automatically. Keep the default build command (`next build`) and deploy.
 
-No environment variables are required.
+No environment variables are required for device-only use. For accounts, add the two Supabase variables from `.env.example` (see **Accounts and shared data**).

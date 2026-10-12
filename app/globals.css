@@ -219,6 +219,24 @@ section > .grid-2 + .panel, section > .grid-even + .panel, section > .panel + .g
 .editor-actions { position: sticky; bottom: calc(-28px - env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: center; background: var(--panel); border-top: 1px solid var(--line); margin: 18px -22px 0; padding: 14px 22px; }
 .editor-actions > span { flex: 1; }
 
+/* Accounts */
+.auth-card { max-width: 440px; margin: 40px auto 0; padding: 28px; }
+.auth-card h1 { margin-top: 2px; }
+.auth-form { display: grid; gap: 14px; margin-top: 22px; }
+.auth-form label { display: grid; gap: 6px; font-size: .8rem; font-weight: 600; color: var(--ink-soft); }
+.auth-form input { width: 100%; min-height: 44px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 0 12px; font-size: 1rem; }
+.auth-form input:focus { outline: 2px solid var(--watch); border-color: transparent; }
+.auth-form .btn-primary { justify-content: center; min-height: 46px; }
+.auth-form .link-btn { justify-self: start; font-size: .84rem; }
+.input-icon { position: relative; }
+.input-icon svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-soft); }
+.input-icon input { padding-left: 38px; }
+.notice { margin-top: 16px; border: 1px solid var(--watch); background: var(--callout); padding: 12px 14px; display: flex; gap: 10px; font-size: .88rem; }
+.device-move { flex-wrap: wrap; justify-content: space-between; align-items: center; }
+.device-move-actions { display: flex; gap: 8px; }
+.role-select { min-height: 36px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 0 8px; font-size: .84rem; }
+.steps { margin: 0; padding-left: 20px; font-size: .86rem; line-height: 1.7; color: var(--ink-soft); }
+
 /* KPIs */
 .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 38px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--s1); padding: 16px 16px 14px; min-width: 0; }

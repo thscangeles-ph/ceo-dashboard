@@ -5,6 +5,7 @@ import { Save, Trash2, X } from "lucide-react";
 import type { LeadState } from "@/lib/lead";
 import { LEAD_STATES } from "@/lib/lead";
 import type { InquiryRow } from "@/lib/parse";
+import { cloudConfigured } from "@/lib/cloud";
 import type { InquiryForm } from "@/lib/tracker";
 import { emptyForm, formFromRow, LOST_REASONS, PAYMENT_MODES, rowFromForm, toDateInput } from "@/lib/tracker";
 
@@ -24,10 +25,17 @@ const OUTCOME_HELP: Record<LeadState, string> = {
 
 export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
   row: InquiryRow | null; isNew: boolean; rows: InquiryRow[];
-  onSave: (row: InquiryRow, base?: InquiryRow) => void; onDelete: (row: InquiryRow) => void; onClose: () => void;
+  onSave: (row: InquiryRow, base?: InquiryRow) => void | Promise<void>; onDelete: (row: InquiryRow) => void | Promise<void>; onClose: () => void;
 }) {
   const [form, setForm] = useState<InquiryForm>(() => (row ? formFromRow(row) : emptyForm()));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  // Saving can fail when accounts are on (no connection, no access); keep the form open with the reason.
+  const attempt = async (action: () => void | Promise<void>) => {
+    setSaving(true); setError("");
+    try { await action(); } catch (e) { setError(e instanceof Error ? e.message : "Could not save. Try again."); }
+    setSaving(false);
+  };
   const firstRef = useRef<HTMLSelectElement>(null);
   const options = useMemo(() => {
     const unique = (pick: (r: InquiryRow) => string) => Array.from(new Set(rows.map(pick).filter((v) => v && v !== "Not recorded"))).sort();
@@ -55,7 +63,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
     if (!form.patient.trim()) { setError("Enter the patient's name."); return; }
     if (!form.date) { setError("Enter the inquiry date."); return; }
     if (form.outcome === "lost" && !form.lostReason && !form.action.trim()) { setError("Choose why the lead was lost."); return; }
-    onSave(rowFromForm(form, row || undefined), row || undefined);
+    void attempt(() => onSave(rowFromForm(form, row || undefined), row || undefined));
   };
 
   const list = (id: string, values: string[]) => <datalist id={id}>{values.map((v) => <option key={v} value={v} />)}</datalist>;
@@ -67,7 +75,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
           <div>
             <span className="tag">{isNew ? "New inquiry" : "Update inquiry"}</span>
             <h2 id="editor-title">{isNew ? "Log a patient inquiry" : form.patient || "Inquiry"}</h2>
-            <p className="drill-meta">Saved on this device right away. Use Export tracker to update the Excel file.</p>
+            <p className="drill-meta">{cloudConfigured ? "Saved to the shared database for the whole team." : "Saved on this device right away."} Use Export tracker to update the Excel file.</p>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
@@ -133,10 +141,10 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
 
           {error && <div className="alert" role="alert"><div>{error}</div></div>}
           <div className="editor-actions">
-            {!isNew && row && <button type="button" className="btn btn-outline danger" onClick={() => { if (window.confirm(`Delete the inquiry from ${row.patient || "this patient"}?`)) onDelete(row); }}><Trash2 size={15} />Delete</button>}
+            {!isNew && row && <button type="button" className="btn btn-outline danger" onClick={() => { if (window.confirm(`Delete the inquiry from ${row.patient || "this patient"}?`)) void attempt(() => onDelete(row)); }}><Trash2 size={15} />Delete</button>}
             <span />
             <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary"><Save size={15} />{isNew ? "Add inquiry" : "Save changes"}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}><Save size={15} />{saving ? "Saving…" : isNew ? "Add inquiry" : "Save changes"}</button>
           </div>
         </form>
       </aside>

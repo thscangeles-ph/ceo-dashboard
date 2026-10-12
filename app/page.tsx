@@ -1,10 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, Download, FileSpreadsheet, HardDrive, MousePointerClick, Plus, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, Users } from "lucide-react";
+import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, Cloud, Download, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Plus, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
+import type { Workspace } from "@/lib/store";
 import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember } from "@/lib/store";
+import type { Session } from "@supabase/supabase-js";
+import type { Role } from "@/lib/cloud";
+import { cloudConfigured, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
+import { LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
@@ -19,6 +24,13 @@ declare global {
 }
 
 const EXCEL = /\.(xlsx|xlsm|xls)$/i;
+type AuthState =
+  | { status: "local" } // no Supabase configured: data stays on this device
+  | { status: "loading" }
+  | { status: "signedOut" }
+  | { status: "setPassword"; email: string }
+  | { status: "noAccess"; email: string; error?: string }
+  | { status: "signedIn"; userId: string; email: string; role: Role };
 const toInputDate = (date: Date | null) => (date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` : "");
 
 export default function Home() {
@@ -38,7 +50,97 @@ export default function Home() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [restoring, setRestoring] = useState(true);
 
+  // With Supabase configured, everyone signs in and shares one set of data (see lib/cloud.ts).
+  const [auth, setAuth] = useState<AuthState>(cloudConfigured ? { status: "loading" } : { status: "local" });
+  const role: Role = auth.status === "signedIn" ? auth.role : "admin";
+  const cloud = auth.status === "signedIn";
+  const [team, setTeam] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [deviceData, setDeviceData] = useState<Workspace | null>(null);
+  const linkType = useRef<string | null>(null);
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
+
   useEffect(() => {
+    if (!cloudConfigured) return;
+    const sb = getCloud()!;
+    // Invite and password-reset emails land here with the link type in the URL.
+    linkType.current = /type=(invite|recovery)/.exec(window.location.hash)?.[1] || null;
+    let live = true;
+    const handle = async (session: Session | null, recovery: boolean) => {
+      if (!live) return;
+      if (!session) { setAuth({ status: "signedOut" }); return; }
+      const email = session.user.email || "";
+      if (recovery || linkType.current) { setAuth({ status: "setPassword", email }); return; }
+      try {
+        const profile = await loadProfile(sb, session.user.id);
+        if (!live) return;
+        setAuth(profile?.role ? { status: "signedIn", userId: session.user.id, email, role: profile.role } : { status: "noAccess", email });
+      } catch (e) {
+        if (live) setAuth({ status: "noAccess", email, error: (e as Error).message });
+      }
+    };
+    const { data } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED") return;
+      // Supabase advises not to await its own calls inside this callback.
+      setTimeout(() => void handle(session, event === "PASSWORD_RECOVERY"), 0);
+    });
+    return () => { live = false; data.subscription.unsubscribe(); };
+  }, []);
+
+  const cloudKey = auth.status === "signedIn" ? `${auth.userId}|${auth.role}` : "";
+  const refreshCloud = useCallback(async () => {
+    const sb = getCloud();
+    if (!sb || !cloudKey) return;
+    const myRole = cloudKey.split("|")[1] as Role;
+    setBusy(true);
+    try {
+      const data = await loadCloud(sb, myRole);
+      setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSyncedAt(new Date()); setError("");
+      setFilters((f) => ({ ...f, status: data.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
+      if (myRole === "staff" || (!data.sales.length && data.inquiries.length)) setTab("crm");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false); setRestoring(false);
+    }
+  }, [cloudKey]);
+
+  useEffect(() => {
+    if (!cloudKey) return;
+    let live = true;
+    const first = setTimeout(() => void refreshCloud(), 0);
+    // Data saved on this device before sign-in can be moved to the shared cloud once.
+    void loadWorkspace().then((saved) => { if (live && saved && (saved.sales.length || saved.inquiries.length)) setDeviceData(saved); });
+    // Pick up colleagues' changes when coming back to the app.
+    let last = Date.now();
+    const onVisible = () => { if (document.visibilityState === "visible" && Date.now() - last > 60_000) { last = Date.now(); void refreshCloud(); } };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { live = false; clearTimeout(first); document.removeEventListener("visibilitychange", onVisible); };
+  }, [cloudKey, refreshCloud]);
+
+  const signOut = async () => {
+    await getCloud()?.auth.signOut();
+    // Shared data lives in the cloud and is not kept on the device; any older device-only data stays until an admin moves or discards it.
+    setSales([]); setInquiries([]); setSheets([]); setDeviceData(null); setTeam(false); setTab("summary");
+  };
+
+  const uploadDeviceData = async () => {
+    const sb = getCloud();
+    if (!sb || !deviceData) return;
+    setBusy(true);
+    try {
+      const known = new Map(inquiries.map((r) => [r.rowKey, r]));
+      await saveInquiries(sb, deviceData.inquiries.filter((r) => !known.has(r.rowKey) || r.editedAt));
+      if (role === "admin") await saveSales(sb, deviceData.sales);
+      await saveSheets(sb, deviceData.sheets.filter((s) => role === "admin" || s.kind === "concierge"));
+      await clearWorkspace(); setDeviceData(null);
+      await refreshCloud();
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  useEffect(() => {
+    if (cloudConfigured) return;
     let cancelled = false;
     const keep = getRemember();
     (keep ? loadWorkspace() : clearWorkspace().then(() => null)).then((saved) => {
@@ -55,6 +157,7 @@ export default function Home() {
   }, []);
 
   const persist = useCallback(async (data: { sales: SalesRow[]; inquiries: InquiryRow[]; sheets: SheetSummary[] }, keep = remember) => {
+    if (cloudConfigured) return; // signed-in data is saved to the cloud instead
     if (!keep) { await clearWorkspace(); setSavedAt(null); return; }
     setSavedAt(await saveWorkspace(data));
   }, [remember]);
@@ -63,12 +166,15 @@ export default function Home() {
   const [editor, setEditor] = useState<{ row: InquiryRow | null } | null>(null);
   const openEditor = useCallback((row?: InquiryRow) => { setDrill(null); setEditor({ row: row ?? null }); }, []);
   const closeEditor = useCallback(() => setEditor(null), []);
-  const saveInquiry = (row: InquiryRow, base?: InquiryRow) => {
+  const closeTeam = useCallback(() => setTeam(false), []);
+  const saveInquiry = async (row: InquiryRow, base?: InquiryRow) => {
+    if (cloud) await saveInquiries(getCloud()!, [row]); // throws → the form shows the error and stays open
     const next = base ? inquiries.map((r) => (r.rowKey === base.rowKey ? row : r)) : [row, ...inquiries];
     setInquiries(next); setEditor(null); setTab("crm");
     void persist({ sales, inquiries: next, sheets });
   };
-  const deleteInquiry = (row: InquiryRow) => {
+  const deleteInquiry = async (row: InquiryRow) => {
+    if (cloud) await removeInquiry(getCloud()!, row.rowKey);
     const next = inquiries.filter((r) => r.rowKey !== row.rowKey);
     setInquiries(next); setEditor(null);
     void persist({ sales, inquiries: next, sheets });
@@ -86,16 +192,29 @@ export default function Home() {
     try {
       const parsed = await parseWorkbooks(excelFiles);
       if (!parsed.sales.length && !parsed.inquiries.length) throw new Error(parsed.problems.join(" ") || "No usable rows were found in the workbook.");
+      // Only admins may add sales reports once accounts are on; staff uploads keep the tracker only.
+      const newSales = role === "admin" ? parsed.sales : [];
+      const newSheets = parsed.sheets.filter((s) => role === "admin" || s.kind === "concierge");
+      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an admin. Your account can add the scheduling tracker.");
       // Adding files merges them with what is already loaded; identical rows are counted once.
       const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
-      parsed.sales.forEach((row) => salesMap.set(row.rowKey, row));
+      newSales.forEach((row) => salesMap.set(row.rowKey, row));
       const inquiryMap = new Map(inquiries.map((row) => [row.rowKey, row]));
       // An inquiry updated in the app wins over an older copy of the same row in a re-uploaded sheet.
-      parsed.inquiries.forEach((row) => { if (!inquiryMap.get(row.rowKey)?.editedAt) inquiryMap.set(row.rowKey, row); });
+      const changedInquiries = parsed.inquiries.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
+      changedInquiries.forEach((row) => inquiryMap.set(row.rowKey, row));
+      if (cloud) {
+        const sb = getCloud()!;
+        await saveInquiries(sb, changedInquiries);
+        await saveSales(sb, newSales);
+        await saveSheets(sb, newSheets);
+        setSyncedAt(new Date());
+      }
+      setNotice(parsed.sales.length && !newSales.length ? "The sales report was skipped: only admins can add sales data." : "");
       const nextSales = Array.from(salesMap.values());
       const nextInquiries = Array.from(inquiryMap.values());
       const mergedSheets = new Map(sheets.map((item) => [`${item.file}|${item.sheet}`, item]));
-      parsed.sheets.forEach((item) => mergedSheets.set(`${item.file}|${item.sheet}`, item));
+      newSheets.forEach((item) => mergedSheets.set(`${item.file}|${item.sheet}`, item));
       const nextSheets = Array.from(mergedSheets.values());
       setSales(nextSales);
       setInquiries(nextInquiries);
@@ -116,7 +235,7 @@ export default function Home() {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [sales, inquiries, sheets, persist]);
+  }, [sales, inquiries, sheets, persist, role, cloud]);
 
   // Installed on a computer, the app can be chosen in "Open with" for Excel files.
   const latestProcess = useRef(processFiles);
@@ -166,6 +285,13 @@ export default function Home() {
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((current) => ({ ...current, [key]: value }));
   const hasData = sales.length > 0 || inquiries.length > 0;
 
+  // Sign-in gates when accounts are on.
+  if (auth.status === "loading") return <LoadingScreen />;
+  if (auth.status === "signedOut") return <LoginScreen />;
+  if (auth.status === "setPassword") return <SetPasswordScreen email={auth.email} onDone={() => { linkType.current = null; window.location.replace(window.location.pathname); }} />;
+  if (auth.status === "noAccess") return <NoAccessScreen email={auth.email} error={auth.error} onSignOut={() => void signOut()} />;
+  const syncTime = (d: Date | null) => (d ? d.toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+
   return (
     <DrillProvider value={setDrill}>
     <EditorProvider value={openEditor}>
@@ -181,7 +307,10 @@ export default function Home() {
             <InstallAppButton />
             {hasData && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
             {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
-            {hasData && <button type="button" className="btn btn-ghost" onClick={reset} aria-label="Start over"><RefreshCw size={16} /><span className="hide-sm">Start over</span></button>}
+            {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
+            {cloud && role === "admin" && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
+            {cloud && <button type="button" className="btn btn-ghost" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16} /><span className="hide-sm">Sign out</span></button>}
+            {!cloud && hasData && <button type="button" className="btn btn-ghost" onClick={reset} aria-label="Start over"><RefreshCw size={16} /><span className="hide-sm">Start over</span></button>}
           </div>
         </div>
       </div>
@@ -203,13 +332,34 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <div className="privacy"><ShieldCheck size={17} /><span>Workbooks are read on this device and never uploaded to a server. {remember ? "The latest data stays saved on this device, so it is still here after you refresh or close the app." : "Nothing is kept: data is cleared when you close the app."}</span></div>
-            <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep data on this device <small>(turn off on shared computers)</small></label>
+            {cloud
+              ? <div className="privacy"><ShieldCheck size={17} /><span>Uploads and inquiries are saved to THSC&apos;s shared database, so everyone signed in sees the same data on any computer or phone. {role === "staff" ? "Your account can add the scheduling tracker and inquiries; sales reports are added by an admin." : ""}</span></div>
+              : <>
+                <div className="privacy"><ShieldCheck size={17} /><span>Workbooks are read on this device and never uploaded to a server. {remember ? "The latest data stays saved on this device, so it is still here after you refresh or close the app." : "Nothing is kept: data is cleared when you close the app."}</span></div>
+                <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep data on this device <small>(turn off on shared computers)</small></label>
+              </>}
           </>
         )}
 
-        {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Check the workbook.</strong> {error}</div></div>}
-        {hasData && (
+        {cloud && restoring && <p className="empty-note" role="status" style={{ marginTop: 20 }}>Loading shared data…</p>}
+        {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Something needs attention.</strong> {error}</div></div>}
+        {notice && <div className="notice" role="status"><div>{notice}</div></div>}
+        {cloud && deviceData && (
+          <div className="notice device-move" role="status">
+            <div><strong>This device still has data saved before sign-in</strong> ({count(deviceData.inquiries.length)} inquiries{role === "admin" ? `, ${count(deviceData.sales.length)} sales rows` : ""}). Move it to the shared database so the whole team sees it?</div>
+            <div className="device-move-actions">
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void uploadDeviceData()}><Upload size={14} />Move to shared</button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => { void clearWorkspace(); setDeviceData(null); }}>Discard</button>
+            </div>
+          </div>
+        )}
+        {cloud && (
+          <div className="storage-bar no-print">
+            <span><Cloud size={15} aria-hidden />{syncedAt ? <>Shared database · synced {syncTime(syncedAt)}</> : "Shared database"}</span>
+            <span>Signed in as <strong>{auth.status === "signedIn" ? auth.email : ""}</strong> · {role === "admin" ? "Admin" : "Staff"}</span>
+          </div>
+        )}
+        {!cloud && hasData && (
           <div className="storage-bar no-print">
             <span><HardDrive size={15} aria-hidden />{remember ? (savedAt ? <>Saved on this device · {savedAt.toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</> : "Saving on this device…") : "Not saved: data is cleared when you close the app"}</span>
             <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep on this device</label>
@@ -224,7 +374,7 @@ export default function Home() {
 
         {hasData && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
-            <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>
+            {role === "admin" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
             <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} />Patient CRM{inquiries.length ? <small>{count(inquiries.length)}</small> : <span className="hide-sm"> (no tracker)</span>}</button>
           </nav>
         )}
@@ -301,6 +451,7 @@ export default function Home() {
         )}
       </div>
       <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Scheduling tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
+      {team && auth.status === "signedIn" && <TeamPanel me={auth.userId} onClose={closeTeam} />}
       {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor} />}
     </main>
     </EditorProvider>
