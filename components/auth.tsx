@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, LogIn, Mail, ShieldCheck, Users, X } from "lucide-react";
-import type { Profile, Role } from "@/lib/cloud";
-import { friendly, getCloud, listProfiles, setProfileRole } from "@/lib/cloud";
+import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import type { NewMember, Profile, Role } from "@/lib/cloud";
+import { createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setProfileRole } from "@/lib/cloud";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -107,14 +107,23 @@ export function NoAccessScreen({ email, error, onSignOut }: { email: string; err
   );
 }
 
-const ROLE_LABEL: Record<string, string> = { admin: "Admin: everything", staff: "Staff: Patient CRM only", none: "No access" };
+const ACCESS_OPTIONS: { value: Role | "none"; label: string }[] = [
+  { value: "admin", label: `${ROLE_LABEL.admin}: everything` },
+  { value: "concierge", label: `${ROLE_LABEL.concierge}: Patient CRM` },
+  { value: "marketing", label: `${ROLE_LABEL.marketing}: read-only, no patient details` },
+  { value: "none", label: "No access" },
+];
 
-/** Admins give people access. New people are added in Supabase first (see the note in the panel). */
+/** CEO / Doctor accounts add people and set what each account can do. */
 export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) {
   const [people, setPeople] = useState<Profile[] | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState("");
+  const [form, setForm] = useState<NewMember>({ email: "", fullName: "", role: "concierge", method: "invite", password: "" });
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState("");
 
+  const reload = () => listProfiles(getCloud()!).then(setPeople).catch((e: Error) => setError(e.message));
   useEffect(() => {
     let live = true;
     listProfiles(getCloud()!).then((list) => { if (live) setPeople(list); }).catch((e: Error) => { if (live) setError(e.message); });
@@ -125,7 +134,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
 
   const change = async (person: Profile, value: string) => {
     const role = value === "none" ? null : (value as Role);
-    if (person.id === me && role !== "admin" && !window.confirm("This removes your own admin access. Continue?")) return;
+    if (person.id === me && role !== "admin" && !window.confirm("This removes your own CEO / Doctor access. Continue?")) return;
     setSaving(person.id); setError("");
     try {
       await setProfileRole(getCloud()!, person.id, role);
@@ -134,15 +143,57 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
     setSaving("");
   };
 
+  const add = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAdding(true); setError(""); setAdded("");
+    try {
+      const result = await createMember(getCloud()!, form);
+      setAdded(result.invited
+        ? `Invitation sent to ${result.email}. They set their own password from the email, then sign in as ${ROLE_LABEL[result.role]}.`
+        : `${result.email} can sign in now as ${ROLE_LABEL[result.role]} with the temporary password. Ask them to change it (Forgot your password? on the sign-in screen).`);
+      setForm((f) => ({ ...f, email: "", fullName: "", password: "" }));
+      await reload();
+    } catch (e) { setError((e as Error).message); }
+    setAdding(false);
+  };
+
   return (
     <div className="drill-overlay no-print" onClick={onClose}>
       <aside className="drill" role="dialog" aria-modal="true" aria-labelledby="team-title" onClick={(e) => e.stopPropagation()}>
         <div className="drill-head">
-          <div><span className="tag">Team</span><h2 id="team-title">Who can use the dashboard</h2><p className="drill-meta">Changes apply the next time the person opens the app.</p></div>
+          <div><span className="tag">Team</span><h2 id="team-title">Accounts and access</h2><p className="drill-meta">Changes apply the next time the person opens the app.</p></div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
         <div className="drill-body">
+          <form className="add-person" onSubmit={add}>
+            <h4 style={{ marginTop: 0 }}><UserPlus size={14} style={{ verticalAlign: -2 }} /> Add person</h4>
+            <div className="field-grid">
+              <label className="wide">Name<input value={form.fullName} placeholder="e.g. Ana Reyes" onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>
+              <label className="wide">Email<input type="email" required value={form.email} placeholder="name@email.com" onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
+              <label className="full">Account type
+                <div className="role-cards" role="radiogroup" aria-label="Account type">
+                  {(Object.keys(ROLE_LABEL) as Role[]).map((r) => (
+                    <label key={r} className={form.role === r ? "on" : ""}>
+                      <input type="radio" name="new-role" checked={form.role === r} onChange={() => setForm({ ...form, role: r })} />
+                      <strong>{ROLE_LABEL[r]}</strong><span>{ROLE_DETAIL[r]}</span>
+                    </label>
+                  ))}
+                </div>
+              </label>
+              <label className="full">How they get in
+                <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as NewMember["method"] })}>
+                  <option value="invite">Email them an invitation (they choose their own password)</option>
+                  <option value="password">Set a temporary password now (share it with them yourself)</option>
+                </select>
+              </label>
+              {form.method === "password" && <label className="wide">Temporary password<input type="text" minLength={8} required value={form.password} autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>}
+            </div>
+            {added && <div className="notice" role="status"><div>{added}</div></div>}
+            <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 14 }}><UserPlus size={15} />{adding ? "Creating…" : "Create account"}</button>
+          </form>
+
           {error && <div className="alert" role="alert"><div>{error}</div></div>}
+          <h4>Everyone with a login</h4>
           {!people ? <p className="empty-note">Loading…</p> : (
             <div className="table-scroll">
               <table>
@@ -153,7 +204,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
                       <td className="name">{p.full_name || p.email}{p.full_name && <small className="muted"><br />{p.email}</small>}{p.id === me && <small className="muted"> (you)</small>}</td>
                       <td>
                         <select className="role-select" value={p.role || "none"} disabled={saving === p.id} onChange={(e) => void change(p, e.target.value)}>
-                          {Object.entries(ROLE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          {ACCESS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </td>
                     </tr>
@@ -162,12 +213,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
               </table>
             </div>
           )}
-          <h4><Users size={14} style={{ verticalAlign: -2 }} /> Adding someone new</h4>
-          <ol className="steps">
-            <li>In Supabase, open <strong>Authentication → Users → Add user</strong>.</li>
-            <li>Choose <strong>Send invitation</strong> (they set their own password from the email), or <strong>Create new user</strong> with a temporary password and tick <em>Auto confirm</em>.</li>
-            <li>They appear here as <em>No access</em>. Set them to Staff or Admin.</li>
-          </ol>
+          <p className="drill-meta" style={{ marginTop: 12 }}>To remove someone, set them to <em>No access</em>. To delete a login completely, use Supabase → Authentication → Users.</p>
         </div>
       </aside>
     </div>

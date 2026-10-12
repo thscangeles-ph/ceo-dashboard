@@ -1,22 +1,28 @@
 -- THSC CEO Dashboard: database setup.
--- Run once in Supabase: Dashboard → SQL Editor → New query → paste this file → Run.
--- Safe to run again; it only creates what is missing.
+-- Run in Supabase: Dashboard → SQL Editor → New query → paste this whole file → Run.
+-- Safe to run again (also after an earlier version of this file): it only adds or updates what changed.
 --
--- Access model
---   * Every login gets a profile with NO access until an admin gives it a role.
---   * role 'staff' : Patient CRM (inquiries) — read, add, update, delete.
---   * role 'admin' : everything, including sales reports, plus giving people access in the app (Team).
---   Row Level Security enforces this in the database, not just in the app.
+-- Account types (profiles.role)
+--   'admin'     CEO / Doctor : everything, including sales reports, and Team (create accounts, set access).
+--   'concierge' Concierge    : Patient CRM, with patient names and contact numbers. Add and update inquiries.
+--   'marketing' Marketing    : read-only analytics of sales and the CRM, with patient names and numbers hidden.
+--   null                     : signed in but no access yet.
+-- Row Level Security enforces this in the database, not only in the app.
 
 -- 1. Profiles ---------------------------------------------------------------
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   email text,
   full_name text,
-  role text check (role in ('admin', 'staff')), -- null = no access yet
+  role text,
   created_at timestamptz not null default now()
 );
 alter table public.profiles enable row level security;
+
+-- Earlier versions called concierge accounts 'staff'.
+alter table public.profiles drop constraint if exists profiles_role_check;
+update public.profiles set role = 'concierge' where role = 'staff';
+alter table public.profiles add constraint profiles_role_check check (role in ('admin', 'concierge', 'marketing'));
 
 -- The signed-in user's role. SECURITY DEFINER so policies can call it without recursing into RLS.
 create or replace function public.app_role()
@@ -66,7 +72,7 @@ create table if not exists public.inquiries (
   updated_at timestamptz not null default now(),
   updated_by uuid references auth.users (id) on delete set null
 );
--- Sales report line items (admins only).
+-- Sales report line items.
 create table if not exists public.sales_rows (
   key text primary key,
   data jsonb not null,
@@ -93,10 +99,11 @@ begin
 end $$;
 
 drop policy if exists "inquiries: staff and admins" on public.inquiries;
-create policy "inquiries: staff and admins" on public.inquiries
+drop policy if exists "inquiries: concierge and admins" on public.inquiries;
+create policy "inquiries: concierge and admins" on public.inquiries
   for all to authenticated
-  using (public.app_role() in ('admin', 'staff'))
-  with check (public.app_role() in ('admin', 'staff'));
+  using (public.app_role() in ('admin', 'concierge'))
+  with check (public.app_role() in ('admin', 'concierge'));
 
 drop policy if exists "sales: admins only" on public.sales_rows;
 create policy "sales: admins only" on public.sales_rows
@@ -105,18 +112,42 @@ create policy "sales: admins only" on public.sales_rows
   with check (public.app_role() = 'admin');
 
 drop policy if exists "sheets: admins all, staff the CRM tracker" on public.sheets;
-create policy "sheets: admins all, staff the CRM tracker" on public.sheets
+drop policy if exists "sheets: admins all, concierge the CRM tracker" on public.sheets;
+create policy "sheets: admins all, concierge the CRM tracker" on public.sheets
   for all to authenticated
-  using (public.app_role() = 'admin' or (public.app_role() = 'staff' and kind = 'concierge'))
-  with check (public.app_role() = 'admin' or (public.app_role() = 'staff' and kind = 'concierge'));
+  using (public.app_role() = 'admin' or (public.app_role() = 'concierge' and kind = 'concierge'))
+  with check (public.app_role() = 'admin' or (public.app_role() = 'concierge' and kind = 'concierge'));
 
--- Only signed-in users reach these tables; RLS above decides what each one sees.
-revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets from anon;
+drop policy if exists "sheets: marketing reads" on public.sheets;
+create policy "sheets: marketing reads" on public.sheets
+  for select to authenticated using (public.app_role() = 'marketing');
+
+-- 3. De-identified views for Marketing -------------------------------------
+-- Same rows, but the patient name becomes a short code and the contact number is removed, so
+-- Marketing can count patients and measure channels without seeing who they are. The views run as
+-- their owner, so the WHERE clause is what limits them to Marketing (and admins, for checking).
+create or replace view public.inquiries_marketing as
+  select key,
+         data - 'contact' - 'patient'
+           || jsonb_build_object(
+                'patient', 'Patient ' || upper(left(md5(coalesce(nullif(regexp_replace(data ->> 'contact', '\D', '', 'g'), ''), lower(data ->> 'patient'), key)), 6)),
+                'contact', '') as data
+  from public.inquiries
+  where public.app_role() in ('marketing', 'admin');
+
+create or replace view public.sales_marketing as
+  select key, data || jsonb_build_object('patient', md5(coalesce(data ->> 'patient', key))) as data
+  from public.sales_rows
+  where public.app_role() in ('marketing', 'admin');
+
+-- Only signed-in users reach these; RLS and the view filters decide what each one sees.
+revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets, public.inquiries_marketing, public.sales_marketing from anon;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.inquiries, public.sales_rows, public.sheets to authenticated;
+grant select on public.inquiries_marketing, public.sales_marketing to authenticated;
 
--- 3. Make yourself the first admin ------------------------------------------
+-- 4. Make yourself the first CEO / Doctor (admin) ---------------------------
 -- After creating your own user (Authentication → Users → Add user), run this
--- with your email. Everyone else can then be given access from the app (Team).
+-- with your email. Everyone else can then be added from the app (Team → Add person).
 --
 --   update public.profiles set role = 'admin' where email = 'you@example.com';

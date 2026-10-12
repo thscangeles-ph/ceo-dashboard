@@ -50,7 +50,8 @@ function SectionHead({ n, title, doctor, children }: { n: number; title: string;
 
 const DUE_ORDER: DueStatus[] = ["overdue", "today", "upcoming", "unscheduled"];
 
-export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
+/** `deidentified`: Marketing accounts get names replaced by codes and no contact numbers, so call lists are hidden. */
+export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[]; deidentified?: boolean }) {
   const drill = useDrill();
   const edit = useInquiryEditor();
   const [filters, setFilters] = useState<CrmFilters>(DEFAULT_CRM_FILTERS);
@@ -89,7 +90,7 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
           <p className="sub">Inquiries, bookings, follow-ups and referrals from the concierge scheduling tracker</p>
           <div className="crm-actions no-print">
             {edit && <button type="button" className="btn btn-primary" onClick={() => edit()}><Plus size={16} />New inquiry</button>}
-            <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)}><Download size={16} />Export tracker (.xlsx)</button>
+            {!deidentified && <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)}><Download size={16} />Export tracker (.xlsx)</button>}
           </div>
         </div>
         <div className="period">
@@ -197,7 +198,7 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
                   {DUE_ORDER.filter((s) => c.dueCounts[s]).map((s) => <button key={s} type="button" className={`chip-btn ${s}${dueFilter === s ? " on" : ""}`} onClick={() => setDueFilter(s)}>{DUE_LABEL[s]} {count(c.dueCounts[s])}</button>)}
                 </div>
               </div>
-              {queue.length ? (
+              {deidentified ? <p className="empty-note">Patient names and numbers are hidden for Marketing accounts. The concierge team works this list.</p> : queue.length ? (
                 <div className="table-scroll queue">
                   <table>
                     <tbody>
@@ -230,7 +231,7 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
                     <select value={recallMonths} onChange={(e) => setRecallMonths(Number(e.target.value))}>{[1, 2, 3, 6, 12].map((m) => <option key={m} value={m}>{m} month{m === 1 ? "" : "s"} ago</option>)}</select>
                   </label>
                 </div>
-                {recall.length ? (
+                {deidentified ? <p className="empty-note">{count(recall.length)} served patients have not been back in {recallMonths}+ months. Names and numbers are hidden for Marketing accounts.</p> : recall.length ? (
                   <div className="table-scroll queue">
                     <table>
                       <tbody>

@@ -26,27 +26,40 @@ This storage belongs to that one browser on that one device. To see the same dat
 
 ## Accounts and shared data (Supabase)
 
-With Supabase connected, everyone signs in, and the whole team shares one set of data on every computer and phone. Without it, the app keeps working on each device only (above).
+With Supabase connected, everyone signs in and the whole team shares one set of data on every computer and phone. Without it, the app keeps working on each device only (above).
+
+**Account types**
+
+| Account | Sees and does |
+| --- | --- |
+| **CEO / Doctor** | Everything: CEO summary (sales), Patient CRM, and **Team** to create accounts and change access |
+| **Concierge** | Patient CRM with patient names and numbers: log and update inquiries, follow-up queue, export the tracker |
+| **Marketing** | Read-only CEO summary and CRM analytics. Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
+
+The database enforces this (Row Level Security and de-identified views), not only the screens.
 
 **One-time setup**
 
-1. **Create the tables.** In Supabase open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
-2. **Lock sign-ups.** In **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**, so only people you add can get in.
-3. **Set the app address.** In **Authentication → URL Configuration**, set **Site URL** to the Vercel address of this app (for example `https://ceo-dashboard.vercel.app`) and add it under **Redirect URLs**. Invite and password-reset emails link there.
-4. **Connect the app.** In **Project Settings → API** copy the **Project URL** and the **anon / publishable** key. In Vercel open **Project → Settings → Environment Variables** and add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then **redeploy** (Deployments → ⋯ → Redeploy). Never use the `service_role` / secret key.
-5. **Create your own login.** In **Authentication → Users → Add user → Create new user**, enter your email and a password and tick **Auto confirm user**.
-6. **Make yourself admin.** Back in the SQL Editor run, with your email:
-   ```sql
-   update public.profiles set role = 'admin' where email = 'you@example.com';
-   ```
-7. Open the app, sign in, and if the device still holds data from before, click **Move to shared**.
+1. **Supabase → SQL Editor → New query:** paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. Run it again whenever this file changes; it is safe to re-run.
+2. **Authentication → Sign In / Providers:** turn off **Allow new users to sign up**.
+3. **Authentication → URL Configuration:** set **Site URL** to the app's Vercel address and add it under **Redirect URLs** (invite and password-reset emails link there).
+4. **Find the keys:**
+   - **Project URL:** Project Settings → **Data API** (also shown under the **Connect** button at the top of the dashboard).
+   - **Public key:** Project Settings → **API Keys** → the **Publishable** key (`sb_publishable_…`), or under **Legacy API Keys** the **anon** key.
+   - **Server key** (only for creating accounts in the app): same page → **Secret** key (`sb_secret_…`), or the legacy **service_role** key.
+5. **Vercel → your project → Settings → Environment Variables:** add, for Production and Preview:
+   - `NEXT_PUBLIC_SUPABASE_URL` = Project URL
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = publishable / anon key
+   - `SUPABASE_SERVICE_ROLE_KEY` = secret / service_role key. Server-only: never add a `NEXT_PUBLIC_` prefix to it and never share it.
 
-**Adding people**
+   Then **Deployments → ⋯ on the latest → Redeploy**. Variables only apply to new deployments.
+6. **Create your own login:** Authentication → Users → **Add user → Create new user**, with **Auto confirm user** ticked.
+7. **Make it CEO / Doctor:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
+8. Sign in to the app. If the device still has data from before, click **Move to shared**.
 
-1. Supabase → **Authentication → Users → Add user**: **Send invitation** (they choose their own password from the email) or **Create new user** with a temporary password and **Auto confirm user** ticked.
-2. In the app, open **Team** and set their access: **Staff** (Patient CRM only) or **Admin** (everything, including sales and Team). New logins have no access until you do this.
+**Adding people:** open **Team → Add person**, enter name and email, pick **CEO / Doctor**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
 
-Access is enforced by the database (Row Level Security), not only by the screens: staff cannot read sales data or change roles, and people without a role see nothing. Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets access with the clinic's Data Protection Officer, and sign out on shared computers.
+Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets which account with the clinic's Data Protection Officer, and sign out on shared computers.
 
 ## Working CRM
 

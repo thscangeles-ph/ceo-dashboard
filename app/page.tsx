@@ -8,6 +8,7 @@ import type { Workspace } from "@/lib/store";
 import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember } from "@/lib/store";
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
+import { ROLE_LABEL } from "@/lib/cloud";
 import { cloudConfigured, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
 import { LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
@@ -54,6 +55,7 @@ export default function Home() {
   const [auth, setAuth] = useState<AuthState>(cloudConfigured ? { status: "loading" } : { status: "local" });
   const role: Role = auth.status === "signedIn" ? auth.role : "admin";
   const cloud = auth.status === "signedIn";
+  const canEdit = role !== "marketing"; // Marketing accounts are read-only
   const [team, setTeam] = useState(false);
   const [notice, setNotice] = useState("");
   const [deviceData, setDeviceData] = useState<Workspace | null>(null);
@@ -97,7 +99,7 @@ export default function Home() {
       const data = await loadCloud(sb, myRole);
       setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSyncedAt(new Date()); setError("");
       setFilters((f) => ({ ...f, status: data.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
-      if (myRole === "staff" || (!data.sales.length && data.inquiries.length)) setTab("crm");
+      if (myRole === "concierge" || (!data.sales.length && data.inquiries.length)) setTab("crm");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -186,6 +188,7 @@ export default function Home() {
   };
 
   const processFiles = useCallback(async (incoming: File[]) => {
+    if (!canEdit) { setError("Marketing accounts can view the dashboards but not add files."); return; }
     const excelFiles = incoming.filter((file) => EXCEL.test(file.name));
     if (!excelFiles.length) { setError("Please upload an Excel file in .xlsx or .xls format."); return; }
     setBusy(true);
@@ -235,7 +238,7 @@ export default function Home() {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [sales, inquiries, sheets, persist, role, cloud]);
+  }, [sales, inquiries, sheets, persist, role, cloud, canEdit]);
 
   // Installed on a computer, the app can be chosen in "Open with" for Excel files.
   const latestProcess = useRef(processFiles);
@@ -294,7 +297,7 @@ export default function Home() {
 
   return (
     <DrillProvider value={setDrill}>
-    <EditorProvider value={openEditor}>
+    <EditorProvider value={canEdit ? openEditor : null}>
     <main onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setDragging(false); void processFiles(Array.from(e.dataTransfer.files)); }}>
       <div className="appbar">
         <div className="appbar-inner">
@@ -305,7 +308,7 @@ export default function Home() {
           </div>
           <div className="appbar-actions">
             <InstallAppButton />
-            {hasData && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
+            {hasData && canEdit && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
             {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
             {cloud && role === "admin" && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
@@ -317,7 +320,10 @@ export default function Home() {
       <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="sr-only" onChange={(e) => void processFiles(Array.from(e.target.files || []))} />
 
       <div className="wrap">
-        {!hasData && !restoring && (
+        {!hasData && !restoring && !canEdit && (
+          <div className="panel empty-tab"><h3><ClipboardList size={16} />Nothing has been shared yet</h3><p className="empty-note">The dashboards appear here once the CEO / Doctor or concierge team uploads the sales report or the scheduling tracker. Use <strong>Refresh</strong> to check again.</p></div>
+        )}
+        {!hasData && !restoring && canEdit && (
           <>
             <div className={`dropzone${dragging ? " dragging" : ""}`} onDragLeave={() => setDragging(false)}>
               <div className="drop-icon"><Upload size={26} /></div>
@@ -333,7 +339,7 @@ export default function Home() {
               </div>
             </div>
             {cloud
-              ? <div className="privacy"><ShieldCheck size={17} /><span>Uploads and inquiries are saved to THSC&apos;s shared database, so everyone signed in sees the same data on any computer or phone. {role === "staff" ? "Your account can add the scheduling tracker and inquiries; sales reports are added by an admin." : ""}</span></div>
+              ? <div className="privacy"><ShieldCheck size={17} /><span>Uploads and inquiries are saved to THSC&apos;s shared database, so everyone signed in sees the same data on any computer or phone. {role === "concierge" ? "Your account can add the scheduling tracker and inquiries; sales reports are added by the CEO / Doctor account." : ""}</span></div>
               : <>
                 <div className="privacy"><ShieldCheck size={17} /><span>Workbooks are read on this device and never uploaded to a server. {remember ? "The latest data stays saved on this device, so it is still here after you refresh or close the app." : "Nothing is kept: data is cleared when you close the app."}</span></div>
                 <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep data on this device <small>(turn off on shared computers)</small></label>
@@ -356,7 +362,7 @@ export default function Home() {
         {cloud && (
           <div className="storage-bar no-print">
             <span><Cloud size={15} aria-hidden />{syncedAt ? <>Shared database · synced {syncTime(syncedAt)}</> : "Shared database"}</span>
-            <span>Signed in as <strong>{auth.status === "signedIn" ? auth.email : ""}</strong> · {role === "admin" ? "Admin" : "Staff"}</span>
+            <span>Signed in as <strong>{auth.status === "signedIn" ? auth.email : ""}</strong> · {ROLE_LABEL[role]}{role === "marketing" ? " (read-only, patient details hidden)" : ""}</span>
           </div>
         )}
         {!cloud && hasData && (
@@ -374,13 +380,13 @@ export default function Home() {
 
         {hasData && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
-            {role === "admin" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
+            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
             <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} />Patient CRM{inquiries.length ? <small>{count(inquiries.length)}</small> : <span className="hide-sm"> (no tracker)</span>}</button>
           </nav>
         )}
 
         {hasData && tab === "crm" && (inquiries.length
-          ? <CrmDashboard rows={inquiries} />
+          ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} />
           : <div className="panel empty-tab"><h3><ClipboardList size={16} />Upload the scheduling tracker, or start logging here</h3><p className="empty-note">Add the concierge scheduling tracker (the Excel staff fill in for every inquiry) with <strong>Add files</strong>, or log inquiries directly in the app. The CRM shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p><button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openEditor()}><Plus size={16} />Log first inquiry</button></div>)}
 
         {!hasData && !restoring && (

@@ -19,19 +19,28 @@ export function getCloud() {
 }
 export const cloudConfigured = Boolean(URL && KEY);
 
-export type Role = "admin" | "staff";
+/** admin = CEO / Doctor (everything), concierge = Patient CRM, marketing = read-only analytics without patient details. */
+export type Role = "admin" | "concierge" | "marketing";
+export const ROLE_LABEL: Record<Role, string> = { admin: "CEO / Doctor", concierge: "Concierge", marketing: "Marketing" };
+export const ROLE_DETAIL: Record<Role, string> = {
+  admin: "Everything: sales summary, CRM and Team",
+  concierge: "Patient CRM: log and update inquiries, with names and numbers",
+  marketing: "Read-only sales and CRM analytics, patient details hidden",
+};
 export type Profile = { id: string; email: string; full_name: string; role: Role | null };
+// Earlier versions called concierge accounts "staff".
+const normalizeRole = (role: string | null): Role | null => (role === "staff" ? "concierge" : (role as Role | null));
 
 export async function loadProfile(sb: SupabaseClient, userId: string): Promise<Profile | null> {
   const { data, error } = await sb.from("profiles").select("id, email, full_name, role").eq("id", userId).maybeSingle();
   if (error) throw new Error(friendly(error.message));
-  return data as Profile | null;
+  return data ? { ...(data as Profile), role: normalizeRole((data as Profile).role) } : null;
 }
 
 export async function listProfiles(sb: SupabaseClient): Promise<Profile[]> {
   const { data, error } = await sb.from("profiles").select("id, email, full_name, role").order("email");
   if (error) throw new Error(friendly(error.message));
-  return (data || []) as Profile[];
+  return ((data || []) as Profile[]).map((p) => ({ ...p, role: normalizeRole(p.role) }));
 }
 
 export async function setProfileRole(sb: SupabaseClient, id: string, role: Role | null) {
@@ -60,11 +69,12 @@ async function fetchAll<T>(sb: SupabaseClient, table: string): Promise<T[]> {
   }
 }
 
-/** Everything the signed-in person is allowed to see. Staff get only the CRM. */
+/** Everything the signed-in person is allowed to see. Concierge get the CRM; Marketing get de-identified views. */
 export async function loadCloud(sb: SupabaseClient, role: Role) {
+  const marketing = role === "marketing";
   const [inquiries, sales, sheets] = await Promise.all([
-    fetchAll<InquiryRow>(sb, "inquiries"),
-    role === "admin" ? fetchAll<SalesRow>(sb, "sales_rows") : Promise.resolve([] as SalesRow[]),
+    fetchAll<InquiryRow>(sb, marketing ? "inquiries_marketing" : "inquiries"),
+    role === "concierge" ? Promise.resolve([] as SalesRow[]) : fetchAll<SalesRow>(sb, marketing ? "sales_marketing" : "sales_rows"),
     fetchAll<SheetSummary>(sb, "sheets"),
   ]);
   return { inquiries, sales, sheets };
@@ -83,6 +93,21 @@ export const saveInquiries = (sb: SupabaseClient, rows: InquiryRow[]) => upsert(
 export const saveSales = (sb: SupabaseClient, rows: SalesRow[]) => upsert(sb, "sales_rows", rows.map((r) => ({ key: r.rowKey, data: r })));
 export const saveSheets = (sb: SupabaseClient, rows: SheetSummary[]) => upsert(sb, "sheets", rows.map((s) => ({ key: `${s.file}|${s.sheet}`, kind: s.kind, data: s })));
 
+export type NewMember = { email: string; fullName: string; role: Role; method: "invite" | "password"; password?: string };
+/** Creates a login through the app's server (app/api/team), which holds the Supabase admin key. */
+export async function createMember(sb: SupabaseClient, member: NewMember) {
+  const { data } = await sb.auth.getSession();
+  const response = await fetch("/api/team", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` },
+    body: JSON.stringify(member),
+  }).catch(() => null);
+  if (!response) throw new Error(friendly("Failed to fetch"));
+  const result = (await response.json().catch(() => ({}))) as { error?: string; id?: string };
+  if (!response.ok || !result.id) throw new Error(result.error || "Could not create the account.");
+  return result as { id: string; email: string; fullName: string; role: Role; invited: boolean };
+}
+
 export async function deleteInquiry(sb: SupabaseClient, key: string) {
   const { error } = await sb.from("inquiries").delete().eq("key", key);
   if (error) throw new Error(friendly(error.message));
@@ -92,7 +117,7 @@ export async function deleteInquiry(sb: SupabaseClient, key: string) {
 export function friendly(message: string) {
   if (/invalid login credentials/i.test(message)) return "Wrong email or password.";
   if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask the admin to confirm the user in Supabase.";
-  if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask an admin to give you access in Team.";
+  if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask the CEO / Doctor account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";
   if (/failed to fetch|network/i.test(message)) return "Can't reach the server. Check the internet connection and try again.";
   return message;
