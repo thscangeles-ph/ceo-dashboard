@@ -34,12 +34,12 @@ export function getCloud() {
 }
 export const cloudConfigured = Boolean(URL && KEY);
 
-/** admin = CEO / Doctor (everything), concierge = CRM Dashboard, marketing = read-only analytics without patient details. */
+/** admin = CEO / Doctor (everything), concierge = Inquiry Tracker and CRM Dashboard, marketing = read-only analytics without patient details. */
 export type Role = "admin" | "concierge" | "marketing";
 export const ROLE_LABEL: Record<Role, string> = { admin: "CEO / Doctor", concierge: "Concierge", marketing: "Marketing" };
 export const ROLE_DETAIL: Record<Role, string> = {
-  admin: "Everything: Sales Dashboard, CRM Dashboard and Team",
-  concierge: "CRM Dashboard: log and update inquiries, with names and numbers",
+  admin: "Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker and Team",
+  concierge: "Inquiry Tracker (add and update inquiries) and CRM Dashboard, with names and numbers",
   marketing: "Read-only Sales and CRM Dashboards, patient details hidden",
 };
 export type Profile = { id: string; email: string; full_name: string; role: Role | null };

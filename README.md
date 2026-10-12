@@ -10,7 +10,8 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **Where new patients come from**: revenue, patients and average per patient by source (NEW and HMO/NEW only, since returning patients have no source)
 - **Revenue mix**: by service line (department) and by patient category (Regular, Senior, PWD)
 - **Top referring physicians**
-- **CRM Dashboard tab** (from the scheduling tracker), organised by the eight CRM functions: inquiry management (what patients ask, weekly trend, next step recorded), appointment management (bookings, no-shows, cancellations), follow-up reminders (a follow-up queue of overdue and upcoming call-backs, reminder coverage), patient retention (recall list, new vs. returning), referral management, marketing analysis (booking rate and revenue per channel or campaign), concierge monitoring (when inquiries arrive, branches, staff and response time) and business analytics (demand by procedure)
+- **Inquiry Tracker tab**: the scheduling tracker as a working sheet, with a Next Step box for every inquiry (see **Inquiry Tracker** below)
+- **CRM Dashboard tab** (built from the Inquiry Tracker), organised by the eight CRM functions: inquiry management (what patients ask, weekly trend, next step recorded), appointment management (bookings, no-shows, cancellations), follow-up reminders (a follow-up queue of overdue and upcoming call-backs, reminder coverage), patient retention (recall list, new vs. returning), referral management, marketing analysis (booking rate and revenue per channel or campaign), concierge monitoring (when inquiries arrive, branches, staff and response time) and business analytics (demand by procedure)
 
 **Everything is clickable.** Click a KPI card, chart bar, bar segment, legend item, finding or table row to open a details panel with the records behind that number: patients, visits, revenue, breakdowns by patient type and service, and the billed line items, which can be downloaded as Excel. Patient names are not shown for sales data.
 
@@ -32,9 +33,9 @@ With Supabase connected, everyone signs in and the whole team shares one set of 
 
 | Account | Sees and does |
 | --- | --- |
-| **CEO / Doctor** | Everything: Sales Dashboard, CRM Dashboard, and **Team** to create accounts and change access |
-| **Concierge** | CRM Dashboard with patient names and numbers: log and update inquiries, follow-up queue, export the tracker |
-| **Marketing** | Read-only Sales Dashboard and CRM Dashboard. Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
+| **CEO / Doctor** | Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker, and **Team** to create accounts and change access |
+| **Concierge** | Inquiry Tracker (add and update inquiries, export the Excel file) and CRM Dashboard, with patient names and numbers |
+| **Marketing** | Read-only Sales Dashboard and CRM Dashboard (no Inquiry Tracker). Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
 
 The database enforces this (Row Level Security and de-identified views), not only the screens.
 
@@ -66,15 +67,17 @@ The database enforces this (Row Level Security and de-identified views), not onl
 
 Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets which account with the clinic's Data Protection Officer, and sign out on shared computers.
 
-## Working CRM
+## Inquiry Tracker
 
-The CRM Dashboard tab is not only a report. Staff can:
+The Inquiry Tracker tab is where inquiries are logged and kept up to date. The CRM Dashboard is built from it and is read-only: it has no add or edit buttons, and its follow-up queue opens the patient in the tracker.
 
-- **Log a new inquiry** (New inquiry button) with the same fields as the scheduling tracker.
-- **Update an inquiry after a call:** click a patient in the follow-up queue, or **Update** on any inquiry in a details panel, and set the outcome (booked, served, no-show, cancelled, lost with a reason, or still open with a new follow-up date), reminder, revenue and next step.
-- **Export tracker (.xlsx):** download every inquiry in the tracker's own column layout, to keep the Excel file and the app in step.
-
-Edits made in the app win over older copies of the same row when the Excel file is uploaded again, and re-uploads never duplicate rows.
+- **Same layout as the Excel file:** one row per inquiry in the scheduling tracker's columns and order (New or Returning Patient, Date, Time, Channel / Source, Name, Contact Number, Procedure / Test, Branch, Mode of Payment, Inquired, **Responded**, follow-up, reminder, Booked, No Show, Served, Revenue, Other Applicable Actions), numbered like the sheet.
+- **Edit like Excel:** click a cell (or select it and press Enter), type, then press Enter to save or Esc to cancel. Yes/No columns are drop-downs.
+- **Responded (YES/NO):** whether staff replied to the inquiry. Unanswered inquiries are flagged, and price questions without a reply have their own filter. Sheets without this column count an inquiry as answered once a booking, follow-up date, reminder or action is recorded.
+- **Next step / status box** on every row: *Reply with the price* or *Reply to the inquiry* (no reply yet), *Follow up* (with the date, overdue or due today), *Set a follow-up date*, *Send a reminder*, *Wait for the appointment*, *Mark Served or No-show* (appointment date passed), *Call to reschedule* (no-show), or **Complete** (served, cancelled, or closed as lost). Click it to open the full form, where the outcome, lost reason and other details are set.
+- **Filters:** Needs action, Overdue, Not responded, Price question with no reply, Scheduled, Complete; plus search, branch and sort (newest, oldest as in Excel, or most urgent).
+- **Add inquiry** opens the form for a new inquiry.
+- **Export Excel** downloads the tracker in the original sheet's layout (the OUTCOME (REMARKS) heading over No Show and Served, the same column widths, filters on the header row) with Responded and Next Step / Status added. The file can be uploaded again. Rows are matched, not duplicated, and edits made in the app win over older copies of the same row.
 
 ## Install on a PC, phone or tablet
 
@@ -104,7 +107,7 @@ Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the heade
 | Patient category | `Patient Category`, `Discount Type`, or `Category` holding REGULAR / SENIOR / PWD |
 | Gross / discount | `Gross Amount`, `Amount`; `Discount` |
 
-**Scheduling tracker (CRM Dashboard)**: the concierge sheet staff fill in for every inquiry, as a separate file or another sheet. The app recognises its columns: `New or Returning Patient`, `Date`, `Time`, `Channel / Source`, `Name`, `Contact Number`, `Procedure / Test`, `Branch`, `Mode of Payment`, `Inquired`, `If not booked, schedule of follow-up`, `If booked, send a reminder`, `Booked (Date of Booking)`, `No Show`, `Served`, `Revenue (Cost of Procedure)` and `Other Applicable Actions (Follow-up)`. Optional columns unlock more of the CRM: `Staff` (staff performance), `Date Responded` (response time), `Referred By` (referral partners), `Campaign` (marketing) and `Appointment Date` (reminder timing, recalls). Simpler logs with `Channel` and `Status` (Booked, Served, No-show, No booking) still work.
+**Scheduling tracker (CRM Dashboard)**: the concierge sheet staff fill in for every inquiry, as a separate file or another sheet. The app recognises its columns: `New or Returning Patient`, `Date`, `Time`, `Channel / Source`, `Name`, `Contact Number`, `Procedure / Test`, `Branch`, `Mode of Payment`, `Inquired`, `If not booked, schedule of follow-up`, `If booked, send a reminder`, `Booked (Date of Booking)`, `No Show`, `Served`, `Revenue (Cost of Procedure)` and `Other Applicable Actions (Follow-up)`. Optional columns unlock more of the CRM: `Responded (YES/NO)` (replies, unanswered price questions), `Staff` (staff performance), `Date Responded` (response time), `Referred By` (referral partners), `Campaign` (marketing) and `Appointment Date` (reminder timing, recalls). Simpler logs with `Channel` and `Status` (Booked, Served, No-show, No booking) still work.
 
 **Download template** on the start screen produces a workbook with both sheets and example rows.
 

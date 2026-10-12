@@ -1,7 +1,7 @@
 import type { Finding } from "./analyze";
 import { count, pct, peso, shortDate, sourceGroup, SOURCE_GROUPS } from "./analyze";
 import type { LeadState } from "./lead";
-import { LEAD_STATES, leadState, needsFollowUp } from "./lead";
+import { effectiveResponded, LEAD_STATES, leadState, needsFollowUp } from "./lead";
 import type { InquiryRow } from "./parse";
 import { normalize } from "./parse";
 
@@ -94,6 +94,9 @@ export function analyzeCrm(rows: InquiryRow[], today: Date) {
   const documented = rows.filter((r) => r.booked || r.followUpDate || r.reminder || r.action);
   const undocumented = rows.filter((r) => !(r.booked || r.followUpDate || r.reminder || r.action));
   const openNoDate = rows.filter((r) => leadState(r) === "open" && !r.followUpDate);
+  // Inquiries nobody has answered yet; price questions are the ones most often left on "seen".
+  const notResponded = rows.filter((r) => !effectiveResponded(r));
+  const priceUnanswered = notResponded.filter((r) => inquiryTopic(r) === "Price & fees");
 
   // Time from inquiry to booking date.
   const leadTimes = bookedRows.filter((r) => r.date && r.bookedDate).map((r) => daysBetween(r.date!, r.bookedDate!)).filter((d) => d >= 0);
@@ -161,6 +164,7 @@ export function analyzeCrm(rows: InquiryRow[], today: Date) {
     lostReasons,
     reminders: { booked: bookedRows.length, sent: withReminder.length, late: reminderLate, onTime: reminderOnTime.length, missing: noReminder, methods: reminderMethods },
     documented: documented.length, undocumented, openNoDate,
+    responded: rows.length - notResponded.length, notResponded, priceUnanswered,
     leadTime: { avg: leadTimes.length ? leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length : 0, sameDay, count: leadTimes.length },
     people: people.size, repeatPeople, recall,
     hours: firstHour >= 0 ? hours.slice(firstHour, lastHour + 1) : [], weekdays,
@@ -168,7 +172,7 @@ export function analyzeCrm(rows: InquiryRow[], today: Date) {
     responseHours: responses,
     columns: {
       appointment: rows.some((r) => r.appointmentDate), staff: rows.some((r) => r.staff), referredBy: rows.some((r) => r.referredBy), campaign: rows.some((r) => r.campaign),
-      responded: rows.some((r) => r.respondedAt), time: rows.some((r) => r.hasTime), patientStatus: rows.some((r) => r.patientStatus),
+      responded: rows.some((r) => r.respondedAt), respondedFlag: rows.some((r) => r.responded !== null), time: rows.some((r) => r.hasTime), patientStatus: rows.some((r) => r.patientStatus),
     },
   };
 }
@@ -182,6 +186,10 @@ export function crmFindings(c: CrmSummary): Finding[] {
   if (c.dueCounts.overdue || c.dueCounts.today) {
     const rows = c.queue.filter((q) => q.status === "overdue" || q.status === "today").map((q) => q.row);
     out.push({ tone: "risk", label: "Follow-ups due", value: count(rows.length), text: `leads are past or at their follow-up date (${count(c.dueCounts.overdue)} overdue). Call them back, then update the sheet: booked, or no further action.`, drill: () => ({ kind: "inquiries", title: "Follow-ups due or overdue", rows }) });
+  }
+  if (c.notResponded.length) {
+    const price = c.priceUnanswered.length;
+    out.push({ tone: "risk", label: "Not responded", value: count(c.notResponded.length), text: `inquiries have no reply yet${price ? `, ${count(price)} of them asking about the price` : ""}. Answer them from the Inquiry Tracker and mark Responded YES.`, drill: () => ({ kind: "inquiries", title: "Inquiries not responded to", rows: c.notResponded }) });
   }
   const channels = c.byChannel.filter((x) => x.inquiries >= 10);
   if (channels.length >= 2) {

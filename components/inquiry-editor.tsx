@@ -75,7 +75,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
           <div>
             <span className="tag">{isNew ? "New inquiry" : "Update inquiry"}</span>
             <h2 id="editor-title">{isNew ? "Log a patient inquiry" : form.patient || "Inquiry"}</h2>
-            <p className="drill-meta">{cloudConfigured ? "Saved to the shared database for the whole team." : "Saved on this device right away."} Use Export tracker to update the Excel file.</p>
+            <p className="drill-meta">{cloudConfigured ? "Saved to the shared database for the whole team." : "Saved on this device right away."} Use Export Excel in the Inquiry Tracker to update the Excel file.</p>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
@@ -92,6 +92,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose }: {
               <label>Branch<input list="ed-branches" value={form.branch} onChange={(e) => set("branch", e.target.value)} /></label>
               <label className="wide">Procedure / test<input list="ed-procedures" value={form.procedure} onChange={(e) => set("procedure", e.target.value)} /></label>
               <label className="full">Inquired (what the patient asked)<textarea rows={2} value={form.inquired} onChange={(e) => set("inquired", e.target.value)} /></label>
+              <label>Responded<select value={form.responded} onChange={(e) => set("responded", e.target.value as InquiryForm["responded"])}><option value="yes">YES, we replied</option><option value="no">NO, not yet</option></select></label>
             </div>
           </fieldset>
 

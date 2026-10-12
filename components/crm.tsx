@@ -1,11 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, Eye, PencilLine, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, ListChecks } from "lucide-react";
 import { CountChart, MixBar, RankedBars, TrendChart } from "@/components/charts";
 import { clickable, useDrill } from "@/components/drill";
-import { useInquiryEditor } from "@/components/inquiry-editor";
-import { exportTracker } from "@/lib/tracker";
 import { count, longDate, pct, peso, sourceGroup } from "@/lib/analyze";
 import type { CrmFilters, DueStatus, GroupStat } from "@/lib/crm";
 import { analyzeCrm, applyCrmFilters, crmFindings, DEFAULT_CRM_FILTERS, DUE_LABEL, inquiryTopic, stateOf } from "@/lib/crm";
@@ -50,10 +48,12 @@ function SectionHead({ n, title, doctor, children }: { n: number; title: string;
 
 const DUE_ORDER: DueStatus[] = ["overdue", "today", "upcoming", "unscheduled"];
 
-/** `deidentified`: Marketing accounts get names replaced by codes and no contact numbers, so call lists are hidden. */
-export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[]; deidentified?: boolean }) {
+/**
+ * Read-only analysis of the Inquiry Tracker: inquiries are added and updated there (`onOpenTracker`), never here.
+ * `deidentified`: Marketing accounts get names replaced by codes and no contact numbers, so call lists are hidden.
+ */
+export function CrmDashboard({ rows, deidentified = false, onOpenTracker }: { rows: InquiryRow[]; deidentified?: boolean; onOpenTracker?: (search?: string) => void }) {
   const drill = useDrill();
-  const edit = useInquiryEditor();
   const [filters, setFilters] = useState<CrmFilters>(DEFAULT_CRM_FILTERS);
   const [recallMonths, setRecallMonths] = useState(3);
   const [dueFilter, setDueFilter] = useState<DueStatus | "all">("all");
@@ -75,6 +75,7 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
   const newRow = c.byPatient.find((x) => x.name === "New"), retRow = c.byPatient.find((x) => x.name === "Returning");
   const referralRows = filtered.filter((r) => /REFER|DOCTOR|\bDR\b/i.test(r.channel) || r.referredBy);
   const missing = [
+    !c.columns.respondedFlag && ["Responded (YES/NO)", "whether staff replied to each inquiry, especially price questions (Inquiry management). The Inquiry Tracker export already has it"],
     !c.columns.staff && ["Staff / Handled By", "who handled each inquiry, for staff performance (Concierge monitoring)"],
     !c.columns.responded && ["Date & Time Responded", "when staff first replied, for response times (Inquiry management, Concierge monitoring)"],
     !c.columns.referredBy && ["Referred By", "the referring physician, clinic or corporate partner (Referral management)"],
@@ -87,11 +88,13 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
       <header className="top">
         <div>
           <h1>CRM Dashboard</h1>
-          <p className="sub">Inquiries, bookings, follow-ups and referrals from the concierge scheduling tracker</p>
-          <div className="crm-actions no-print">
-            {edit && <button type="button" className="btn btn-primary" onClick={() => edit()}><Plus size={16} />New inquiry</button>}
-            {!deidentified && <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)}><Download size={16} />Export tracker (.xlsx)</button>}
-          </div>
+          <p className="sub">Inquiries, bookings, follow-ups and referrals, built from the Inquiry Tracker</p>
+          {onOpenTracker && (
+            <div className="crm-actions no-print">
+              <button type="button" className="btn btn-outline" onClick={() => onOpenTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>
+              <span className="hint">Add and update inquiries there; this dashboard follows.</span>
+            </div>
+          )}
         </div>
         <div className="period">
           Inquiries logged<br /><strong>{c.period ? `${longDate(c.period.from)} – ${longDate(c.period.to)}` : "—"}</strong>
@@ -143,7 +146,8 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
 
           <section>
             <SectionHead n={1} title="Inquiry management" doctor="track every patient inquiry and whether staff responded.">
-              {count(c.documented)} of {count(t.inquiries)} inquiries ({pct(c.documented / t.inquiries, 0)}) have a recorded next step: a booking, a follow-up date, a reminder or an action.
+              {count(c.responded)} of {count(t.inquiries)} inquiries ({pct(c.responded / t.inquiries, 0)}) were responded to{c.columns.respondedFlag ? "" : " (judged from what was recorded, until the Responded column is filled in)"}.
+              {" "}{count(c.documented)} ({pct(c.documented / t.inquiries, 0)}) have a recorded next step: a booking, a follow-up date, a reminder or an action.
             </SectionHead>
             <div>
               <div className="panel">
@@ -156,8 +160,9 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
                 <StatTable rows={c.byTopic} name="Question" revenue={false} show={false} onSelect={(r) => open(`Asked about: ${r.name}`, filtered.filter((x) => inquiryTopic(x) === r.name))} />
               </div>
             </div>
-            {(c.undocumented.length > 0 || c.openNoDate.length > 0) && (
+            {(c.notResponded.length > 0 || c.undocumented.length > 0 || c.openNoDate.length > 0) && (
               <div className="alert" style={{ marginTop: 14 }}><AlertTriangle size={18} /><div>
+                {c.notResponded.length > 0 && <><button type="button" className="link-btn" onClick={() => open("Inquiries not responded to", c.notResponded)}>{count(c.notResponded.length)} inquiries</button> have no reply yet{c.priceUnanswered.length ? <>, including <button type="button" className="link-btn" onClick={() => open("Price questions not answered", c.priceUnanswered)}>{count(c.priceUnanswered.length)} price questions</button></> : null}. </>}
                 {c.undocumented.length > 0 && <><button type="button" className="link-btn" onClick={() => open("Inquiries without a next step", c.undocumented)}>{count(c.undocumented.length)} inquiries</button> have no booking, follow-up date, reminder or action recorded. </>}
                 {c.openNoDate.length > 0 && <><button type="button" className="link-btn" onClick={() => open("Open leads without a follow-up date", c.openNoDate)}>{count(c.openNoDate.length)} open leads</button> have no follow-up date.</>}
               </div></div>
@@ -192,7 +197,7 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
             </SectionHead>
             <div className="panel">
               <div className="queue-head">
-                <h3>Follow-up queue: open leads and no-shows to reschedule{edit ? <small className="muted"> · click a patient to update after calling</small> : null}</h3>
+                <h3>Follow-up queue: open leads and no-shows to reschedule{onOpenTracker ? <small className="muted"> · click a patient to update them in the Inquiry Tracker</small> : null}</h3>
                 <div className="chips" role="group" aria-label="Filter follow-ups">
                   <button type="button" className={`chip-btn${dueFilter === "all" ? " on" : ""}`} onClick={() => setDueFilter("all")}>All {count(c.queue.length)}</button>
                   {DUE_ORDER.filter((s) => c.dueCounts[s]).map((s) => <button key={s} type="button" className={`chip-btn ${s}${dueFilter === s ? " on" : ""}`} onClick={() => setDueFilter(s)}>{DUE_LABEL[s]} {count(c.dueCounts[s])}</button>)}
@@ -202,15 +207,15 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
                 <div className="table-scroll queue">
                   <table>
                     <tbody>
-                      <tr><th>Follow up by</th><th>Patient</th><th>Contact</th><th>Procedure</th><th>Channel</th><th>Branch</th><th>Status</th><th>Next step</th>{edit && <th></th>}</tr>
+                      <tr><th>Follow up by</th><th>Patient</th><th>Contact</th><th>Procedure</th><th>Channel</th><th>Branch</th><th>Status</th><th>Next step</th>{onOpenTracker && <th></th>}</tr>
                       {queue.slice(0, 60).map((q) => (
-                        <tr key={q.row.rowKey} className="is-clickable" {...clickable(() => (edit ? edit(q.row) : open(q.row.patient || "Inquiry", [q.row])), `Update ${q.row.patient}`)}>
+                        <tr key={q.row.rowKey} className="is-clickable" {...clickable(() => (onOpenTracker ? onOpenTracker(q.row.patient) : open(q.row.patient || "Inquiry", [q.row])), `${q.row.patient}: open in the Inquiry Tracker`)}>
                           <td><span className={`due ${q.status}`}>{q.due ? fmt(q.due) : DUE_LABEL.unscheduled}</span>{q.status === "overdue" && <small className="muted"> {q.daysLate}d late</small>}</td>
                           <td className="name">{q.row.patient || "—"}</td><td>{q.row.contact || "—"}</td><td className="name">{q.row.procedure || "—"}</td>
                           <td className="name">{q.row.channel}</td><td className="name">{q.row.branch}</td>
                           <td className="name">{q.state === "noShow" ? "No-show: reschedule" : "Not booked"}</td>
                           <td className="name td-wrap">{q.row.action || q.row.remarks || q.row.inquired || "—"}</td>
-                          {edit && <td><span className="row-edit"><PencilLine size={14} aria-hidden />Update</span></td>}
+                          {onOpenTracker && <td><span className="row-edit"><ListChecks size={14} aria-hidden />In tracker</span></td>}
                         </tr>
                       ))}
                     </tbody>

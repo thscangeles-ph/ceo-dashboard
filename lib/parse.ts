@@ -48,6 +48,8 @@ export type InquiryRow = {
   referredBy: string;
   campaign: string;
   respondedAt: Date | null;
+  /** Did staff reply to the inquiry? null = the sheet has no Responded column (see effectiveResponded). */
+  responded: boolean | null;
   /** Set when staff update the inquiry in the app; overrides what the sheet columns imply. */
   outcome?: LeadState;
   editedAt?: Date;
@@ -106,6 +108,7 @@ const CONCIERGE_FIELDS: FieldSpec = {
   staff: ["Staff", "Handled By", "Concierge", "Agent", "Staff Name", "Encoded By", "Assigned To"],
   referredBy: ["Referred By", "Referring Physician", "Referring Doctor", "Referral Partner", "Referrer", "Referring Clinic", "Partner"],
   campaign: ["Campaign", "Ad Campaign", "Promo", "Campaign Name"],
+  responded: ["Responded", "Responded (Yes/No)", "Responded (YES/NO)", "Responded?", "Replied", "Replied?", "Answered"],
   respondedAt: ["Date Responded", "Responded At", "Response Date", "Date/Time Responded", "Date & Time Responded"],
   respondedTime: ["Time Responded", "Response Time"],
 };
@@ -290,6 +293,7 @@ function parseConcierge(grid: unknown[][], header: { index: number; map: Record<
       action: text(row, "action"),
       remarks: text(row, "remarks") || text(row, "action"),
       staff: text(row, "staff"), referredBy: text(row, "referredBy"), campaign: text(row, "campaign"),
+      responded: map.responded < 0 || isBlank(at(row, "responded")) ? null : /^(Y|YES|TRUE|1|DONE|REPLIED|RESPONDED)$/i.test(clean(at(row, "responded"))),
       respondedAt: (() => {
         const day = parseDate(at(row, "respondedAt"));
         const minutes = map.respondedTime >= 0 ? parseTime(at(row, "respondedTime")) : null;
@@ -353,10 +357,10 @@ export function downloadTemplate() {
   ];
   // Same layout as the concierge scheduling tracker, plus the optional CRM columns.
   const concierge = [
-    ["#", "New or Returning Patient", "Date", "Time", "Channel / Source", "Name", "Contact Number", "Procedure / Test", "Branch", "Mode of Payment", "Inquired", "If not booked, schedule of follow-up", "If booked, send a reminder", "Booked (Date of Booking)", "No Show", "Served", "Revenue (Cost of Procedure)", "Other Applicable Actions (Follow-up)", "Appointment Date", "Staff", "Date Responded", "Referred By", "Campaign"],
-    [1, "New", "Sep 14, 2026", "8:02 AM", "Viber", "Mark Dizon", "0917-000-0001", "24 Hrs Holter Monitoring", "Angeles", "—", "Asked about price and duration", "Sep 17, 2026", "—", "—", "No", "No", "—", "Follow up regarding preferred schedule", "—", "Ana", "Sep 14, 2026 8:15 AM", "", ""],
-    [2, "Returning", "Sep 14, 2026", "9:30 AM", "Doctor's Referral", "Liza Cruz", "0917-000-0002", "2D Echo", "Angeles", "Cash", "Requested earliest available slot", "—", "Sep 15, 2026 – SMS Reminder", "Sep 14, 2026", "No", "Yes", "₱3,500", "Results released to patient", "Sep 16, 2026", "Ana", "Sep 14, 2026 9:34 AM", "Dr. Maria Santos", ""],
-    [3, "New", "Sep 15, 2026", "1:10 PM", "Facebook Messenger", "Joshua Lim", "0917-000-0003", "Treadmill Stress Test", "Malolos", "—", "Asked whether HMO is accepted", "—", "Sep 17, 2026 – SMS Reminder", "Sep 15, 2026", "Yes", "No", "—", "Contacted patient to offer rescheduling", "Sep 18, 2026", "Ben", "Sep 15, 2026 2:05 PM", "", "Heart Month FB ad"],
+    ["#", "New or Returning Patient", "Date", "Time", "Channel / Source", "Name", "Contact Number", "Procedure / Test", "Branch", "Mode of Payment", "Inquired", "Responded (YES/NO)", "If not booked, schedule of follow-up", "If booked, send a reminder", "Booked (Date of Booking)", "No Show", "Served", "Revenue (Cost of Procedure)", "Other Applicable Actions (Follow-up)", "Appointment Date", "Staff", "Date Responded", "Referred By", "Campaign"],
+    [1, "New", "Sep 14, 2026", "8:02 AM", "Viber", "Mark Dizon", "0917-000-0001", "24 Hrs Holter Monitoring", "Angeles", "—", "Asked about price and duration", "YES", "Sep 17, 2026", "—", "—", "No", "No", "—", "Follow up regarding preferred schedule", "—", "Ana", "Sep 14, 2026 8:15 AM", "", ""],
+    [2, "Returning", "Sep 14, 2026", "9:30 AM", "Doctor's Referral", "Liza Cruz", "0917-000-0002", "2D Echo", "Angeles", "Cash", "Requested earliest available slot", "YES", "—", "Sep 15, 2026 – SMS Reminder", "Sep 14, 2026", "No", "Yes", "₱3,500", "Results released to patient", "Sep 16, 2026", "Ana", "Sep 14, 2026 9:34 AM", "Dr. Maria Santos", ""],
+    [3, "New", "Sep 15, 2026", "1:10 PM", "Facebook Messenger", "Joshua Lim", "0917-000-0003", "Treadmill Stress Test", "Malolos", "—", "Asked whether HMO is accepted", "YES", "—", "Sep 17, 2026 – SMS Reminder", "Sep 15, 2026", "Yes", "No", "—", "Contacted patient to offer rescheduling", "Sep 18, 2026", "Ben", "Sep 15, 2026 2:05 PM", "", "Heart Month FB ad"],
   ];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(sales), "Sales Report");

@@ -29,3 +29,10 @@ export const needsFollowUp = (row: InquiryRow) => {
   const state = leadState(row);
   return state === "open" || state === "noShow";
 };
+
+/**
+ * Whether staff replied to the inquiry. Uses the Responded column when the sheet has one; older
+ * sheets without it count an inquiry as answered once anything was recorded for it.
+ */
+export const effectiveResponded = (row: InquiryRow) =>
+  row.responded ?? Boolean(row.booked || row.served || row.noShow || row.followUpDate || row.reminder || row.action || row.respondedAt);

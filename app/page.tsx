@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, Cloud, Download, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Plus, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, ListChecks, Cloud, Download, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Plus, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -12,12 +12,13 @@ import { ROLE_LABEL } from "@/lib/cloud";
 import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
 import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
+import { InquiryTracker } from "@/components/tracker";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
 import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
 import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isPaid, longDate, matchesType, PATIENT_TYPES, patientTypeInfo } from "@/lib/analyze";
 import type { InquiryRow, SalesRow, SheetSummary } from "@/lib/parse";
-import { downloadTemplate, parseWorkbooks } from "@/lib/parse";
+import { downloadTemplate, inquiryKey, parseWorkbooks } from "@/lib/parse";
 
 type LaunchParams = { files: { getFile: () => Promise<File> }[] };
 declare global {
@@ -46,7 +47,10 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
-  const [tab, setTab] = useState<"summary" | "crm">("summary");
+  const [tab, setTab] = useState<"summary" | "crm" | "tracker">("summary");
+  // Opening the tracker from the CRM's follow-up queue searches for that patient.
+  const [trackerFocus, setTrackerFocus] = useState({ search: "", n: 0 });
+  const openTracker = useCallback((search = "") => { setTrackerFocus((f) => ({ search, n: f.n + 1 })); setTab("tracker"); window.scrollTo({ top: 0 }); }, []);
   // Data saved on this device survives a refresh or closing the app (see lib/store.ts).
   const [remember, setRememberState] = useState(true);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -110,7 +114,9 @@ export default function Home() {
       const data = await loadCloud(sb, myRole);
       setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSyncedAt(new Date()); setError("");
       setFilters((f) => ({ ...f, status: data.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
-      if (myRole === "concierge" || (!data.sales.length && data.inquiries.length)) setTab("crm");
+      // Concierge work in the Inquiry Tracker; without a sales report the CRM is the first thing to show.
+      if (myRole === "concierge") setTab((t) => (t === "summary" ? "tracker" : t));
+      else if (!data.sales.length && data.inquiries.length) setTab((t) => (t === "summary" ? "crm" : t));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -180,15 +186,22 @@ export default function Home() {
   const openEditor = useCallback((row?: InquiryRow) => { setDrill(null); setEditor({ row: row ?? null }); }, []);
   const closeEditor = useCallback(() => setEditor(null), []);
   const closeTeam = useCallback(() => setTeam(false), []);
+  // Tracker cells save one after another, faster than React re-renders, so edits build on the latest list.
+  const latestInquiries = useRef(inquiries);
+  useEffect(() => { latestInquiries.current = inquiries; }, [inquiries]);
   const saveInquiry = async (row: InquiryRow, base?: InquiryRow) => {
-    if (cloud) await saveInquiries(getCloud()!, [row]); // throws → the form shows the error and stays open
-    const next = base ? inquiries.map((r) => (r.rowKey === base.rowKey ? row : r)) : [row, ...inquiries];
-    setInquiries(next); setEditor(null); setTab("crm");
+    if (cloud) await saveInquiries(getCloud()!, [row]); // throws → the form or cell shows the error
+    const list = latestInquiries.current;
+    const next = base ? list.map((r) => (r.rowKey === base.rowKey ? row : r)) : [row, ...list];
+    latestInquiries.current = next;
+    setInquiries(next); setEditor(null);
+    if (!base) setTab("tracker");
     void persist({ sales, inquiries: next, sheets });
   };
   const deleteInquiry = async (row: InquiryRow) => {
     if (cloud) await removeInquiry(getCloud()!, row.rowKey);
-    const next = inquiries.filter((r) => r.rowKey !== row.rowKey);
+    const next = latestInquiries.current.filter((r) => r.rowKey !== row.rowKey);
+    latestInquiries.current = next;
     setInquiries(next); setEditor(null);
     void persist({ sales, inquiries: next, sheets });
   };
@@ -214,8 +227,12 @@ export default function Home() {
       const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
       newSales.forEach((row) => salesMap.set(row.rowKey, row));
       const inquiryMap = new Map(inquiries.map((row) => [row.rowKey, row]));
+      // Inquiries added in the app come back from an exported tracker under a key made from their
+      // columns; match them to the app's row so re-uploading the export doesn't duplicate them.
+      const byContent = new Map(inquiries.map((row) => [inquiryKey(row.patient, row.contact, row.channel, row.date, row.procedure), row.rowKey]));
+      const incoming = parsed.inquiries.map((row) => (inquiryMap.has(row.rowKey) || !byContent.has(row.rowKey) ? row : { ...row, rowKey: byContent.get(row.rowKey)! }));
       // An inquiry updated in the app wins over an older copy of the same row in a re-uploaded sheet.
-      const changedInquiries = parsed.inquiries.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
+      const changedInquiries = incoming.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
       changedInquiries.forEach((row) => inquiryMap.set(row.rowKey, row));
       if (cloud) {
         const sb = getCloud()!;
@@ -241,7 +258,7 @@ export default function Home() {
       });
       setError(parsed.problems.join(" "));
       // Land on the tab the new file belongs to.
-      if (parsed.inquiries.length && !parsed.sales.length) setTab("crm");
+      if (parsed.inquiries.length && !parsed.sales.length) setTab((t) => (t === "tracker" ? t : "crm"));
       else if (parsed.sales.length && !parsed.inquiries.length) setTab("summary");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workbook could not be read.");
@@ -313,7 +330,8 @@ export default function Home() {
 
   return (
     <DrillProvider value={setDrill}>
-    <EditorProvider value={canEdit ? openEditor : null}>
+    {/* Inquiries are added and updated in the Inquiry Tracker only; the dashboards are read-only views of it. */}
+    <EditorProvider value={canEdit && tab === "tracker" ? openEditor : null}>
     <main onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setDragging(false); void processFiles(Array.from(e.dataTransfer.files)); }}>
       <div className="appbar">
         <div className="appbar-inner">
@@ -396,19 +414,25 @@ export default function Home() {
 
         {hasData && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
-            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />Sales Dashboard{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
-            <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} />CRM Dashboard{inquiries.length ? <small>{count(inquiries.length)}</small> : <span className="hide-sm"> (no tracker)</span>}</button>
+            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} /><span>Sales<span className="hide-sm"> Dashboard</span>{!sales.length && <span className="hide-sm"> (no sales report)</span>}</span></button>}
+            <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} /><span>CRM<span className="hide-sm"> Dashboard</span>{!inquiries.length && <span className="hide-sm"> (no tracker)</span>}</span></button>
+            {canEdit && <button type="button" className={tab === "tracker" ? "on" : ""} aria-current={tab === "tracker" ? "page" : undefined} onClick={() => openTracker()}><ListChecks size={16} />Inquiry Tracker{inquiries.length > 0 && <small className="hide-sm">{count(inquiries.length)}</small>}</button>}
           </nav>
         )}
 
         {hasData && tab === "crm" && (inquiries.length
-          ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} />
-          : <div className="panel empty-tab"><h3><ClipboardList size={16} />Upload the scheduling tracker, or start logging here</h3><p className="empty-note">Add the concierge scheduling tracker (the Excel staff fill in for every inquiry) with <strong>Add files</strong>, or log inquiries directly in the app. The CRM shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p><button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openEditor()}><Plus size={16} />Log first inquiry</button></div>)}
+          ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} onOpenTracker={canEdit ? openTracker : undefined} />
+          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. Upload the concierge scheduling tracker with <strong>Add files</strong>, or add inquiries in the Inquiry Tracker. The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>}</div>)}
+
+        {hasData && tab === "tracker" && canEdit && (
+          <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
+            onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
+        )}
 
         {!hasData && !restoring && (
           <div className="welcome">
             <div className="panel"><h3><FileSpreadsheet size={16} />Sales report columns</h3><p>Needs <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>. Also uses <code>Transaction No.</code>, <code>Patient Type</code>, <code>Status</code>, <code>Source</code>, <code>Referring Physician</code>, <code>Department</code>, <code>Test Examination</code>, <code>Patient Category</code>, <code>Gross Amount</code> and <code>Discount</code> when present.</p></div>
-            <div className="panel"><h3><ClipboardList size={16} />Scheduling tracker (CRM)</h3><p>The concierge sheet staff fill in: <code>New or Returning Patient</code>, <code>Date</code>, <code>Time</code>, <code>Channel / Source</code>, <code>Name</code>, <code>Contact Number</code>, <code>Procedure / Test</code>, <code>Branch</code>, <code>Inquired</code>, follow-up and reminder dates, <code>Booked</code>, <code>No Show</code>, <code>Served</code> and <code>Revenue</code>. It opens the CRM Dashboard tab.</p></div>
+            <div className="panel"><h3><ClipboardList size={16} />Scheduling tracker (CRM)</h3><p>The concierge sheet staff fill in: <code>New or Returning Patient</code>, <code>Date</code>, <code>Time</code>, <code>Channel / Source</code>, <code>Name</code>, <code>Contact Number</code>, <code>Procedure / Test</code>, <code>Branch</code>, <code>Inquired</code>, <code>Responded</code>, follow-up and reminder dates, <code>Booked</code>, <code>No Show</code>, <code>Served</code> and <code>Revenue</code>. It fills the Inquiry Tracker and the CRM Dashboard.</p></div>
             <div className="panel"><h3><Smartphone size={16} />Use it as an app</h3><p>Tap <strong>Install app</strong> above (Chrome or Edge on PC and Android), or in Safari on iPhone tap <strong>Share → Add to Home Screen</strong>. It opens full screen and works offline.</p></div>
           </div>
         )}
