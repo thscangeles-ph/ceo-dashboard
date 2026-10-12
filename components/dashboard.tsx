@@ -137,7 +137,7 @@ export function Funnel({ q, onOpenCrm }: { q: InquirySummary; onOpenCrm?: () => 
     <section>
       <div className="section-head-row">
         <h2>Full funnel: Central Concierge log</h2>
-        {onOpenCrm && <button type="button" className="btn btn-outline no-print" onClick={onOpenCrm}>Open Patient CRM →</button>}
+        {onOpenCrm && <button type="button" className="btn btn-outline no-print" onClick={onOpenCrm}>Open CRM Dashboard →</button>}
       </div>
       <p className="section-note">This is the upstream half the billing data can&apos;t see: every inquiry, not just the ones that paid. The log holds <strong>{count(q.inquiries)} inquir{q.inquiries === 1 ? "y" : "ies"} ({span})</strong>.{q.inquiries < 30 ? " That is too few to act on; treat these rates as a pilot, not a baseline." : ""}</p>
       <div className="kpis four">

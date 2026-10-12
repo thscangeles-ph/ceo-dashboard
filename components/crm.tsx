@@ -86,7 +86,7 @@ export function CrmDashboard({ rows, deidentified = false }: { rows: InquiryRow[
     <>
       <header className="top">
         <div>
-          <h1>Patient CRM</h1>
+          <h1>CRM Dashboard</h1>
           <p className="sub">Inquiries, bookings, follow-ups and referrals from the concierge scheduling tracker</p>
           <div className="crm-actions no-print">
             {edit && <button type="button" className="btn btn-primary" onClick={() => edit()}><Plus size={16} />New inquiry</button>}

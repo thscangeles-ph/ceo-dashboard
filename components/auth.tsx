@@ -153,7 +153,7 @@ function Copy({ text }: { text: string }) {
 
 const ACCESS_OPTIONS: { value: Role | "none"; label: string }[] = [
   { value: "admin", label: `${ROLE_LABEL.admin}: everything` },
-  { value: "concierge", label: `${ROLE_LABEL.concierge}: Patient CRM` },
+  { value: "concierge", label: `${ROLE_LABEL.concierge}: CRM Dashboard` },
   { value: "marketing", label: `${ROLE_LABEL.marketing}: read-only, no patient details` },
   { value: "none", label: "No access" },
 ];
