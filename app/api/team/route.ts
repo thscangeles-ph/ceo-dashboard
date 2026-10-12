@@ -11,6 +11,8 @@ const ROLES = ["admin", "concierge", "marketing"] as const;
 type Role = (typeof ROLES)[number];
 type Body = { email?: string; fullName?: string; role?: Role; method?: "invite" | "password"; password?: string };
 
+const KEY_HELP = (problem: string) =>
+  `Setup problem: SUPABASE_SERVICE_ROLE_KEY in Vercel ${problem}. Copy the Secret key (sb_secret_…) or the legacy service_role key from the same Supabase project (Project Settings → API Keys), paste it into that variable in Vercel, then redeploy. Until then you can add people in Supabase → Authentication → Users and set their access here.`;
 const reply = (status: number, body: object) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 /** Returns an admin Supabase client when the caller is a signed-in CEO / Doctor, or the error reply. */
@@ -21,11 +23,23 @@ async function asCeo(request: Request) {
   if (!url || !serviceKey) {
     return { error: reply(501, { error: "Managing logins from the app isn't switched on yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel and redeploy, or use Supabase → Authentication → Users." }) };
   }
+  // The publishable / anon key cannot create logins; say so instead of failing later.
+  const keyRole = (() => { try { return JSON.parse(Buffer.from(serviceKey.split(".")[1], "base64url").toString()).role as string; } catch { return ""; } })();
+  if (serviceKey.startsWith("sb_publishable_") || keyRole === "anon") {
+    return { error: reply(500, { error: KEY_HELP("holds the publishable (anon) key") }) };
+  }
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return { error: reply(401, { error: "Please sign in again." }) };
   const { data: caller, error: callerError } = await admin.auth.getUser(token);
-  if (callerError || !caller.user) return { error: reply(401, { error: "Please sign in again." }) };
+  if (callerError || !caller.user) {
+    // A wrong server key fails here too; only blame the session when the key itself was accepted.
+    const message = callerError?.message || "";
+    if (/api key|apikey|jwt|signature|forbidden|unauthorized/i.test(message) || callerError?.status === 401 && !/session|expired|token/i.test(message)) {
+      return { error: reply(500, { error: KEY_HELP(`was rejected by Supabase (${message || "invalid key"})`) }) };
+    }
+    return { error: reply(401, { error: "Your sign-in has expired. Sign out and sign in again." }) };
+  }
   const { data: me } = await admin.from("profiles").select("role").eq("id", caller.user.id).maybeSingle();
   if (me?.role !== "admin") return { error: reply(403, { error: "Only a CEO / Doctor account can manage logins." }) };
   return { admin };
