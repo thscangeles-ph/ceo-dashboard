@@ -16,7 +16,23 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 
 Marketing spend and acquisition cost are **not** part of this app. They live in the separate THSC Patient Acquisition Dashboard.
 
-Workbooks are processed in the browser. Nothing is uploaded to a server, there is no database, and no environment variables are needed.
+Workbooks are processed in the browser and never uploaded to a server. There is no database, and no environment variables are needed.
+
+## Data stays saved on the device
+
+The latest uploads and every inquiry logged or updated in the app are saved on the device (in the browser's IndexedDB), so the dashboard is still there after a refresh or closing the app. The bar under the header shows when it was last saved. Untick **Keep on this device** on shared computers, and **Start over** clears everything.
+
+This storage belongs to that one browser on that one device. To see the same data on every phone and computer, the app needs accounts and a cloud database (for example Supabase), with Data Privacy Act safeguards for patient information.
+
+## Working CRM
+
+The Patient CRM tab is not only a report. Staff can:
+
+- **Log a new inquiry** (New inquiry button) with the same fields as the scheduling tracker.
+- **Update an inquiry after a call:** click a patient in the follow-up queue, or **Update** on any inquiry in a details panel, and set the outcome (booked, served, no-show, cancelled, lost with a reason, or still open with a new follow-up date), reminder, revenue and next step.
+- **Export tracker (.xlsx):** download every inquiry in the tracker's own column layout, to keep the Excel file and the app in step.
+
+Edits made in the app win over older copies of the same row when the Excel file is uploaded again, and re-uploads never duplicate rows.
 
 ## Install on a PC, phone or tablet
 

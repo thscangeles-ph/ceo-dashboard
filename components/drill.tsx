@@ -2,10 +2,11 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
-import { Download, X } from "lucide-react";
+import { Download, PencilLine, X } from "lucide-react";
 import type { Drill } from "@/lib/analyze";
 import { count, pct, peso, titleCase, typeGroup } from "@/lib/analyze";
 import { stateOf } from "@/lib/crm";
+import { useInquiryEditor } from "@/components/inquiry-editor";
 import { leadState } from "@/lib/lead";
 import type { SalesRow } from "@/lib/parse";
 
@@ -119,6 +120,7 @@ function InquiryDetails({ drill }: { drill: Extract<Drill, { kind: "inquiries" }
   const booked = rows.filter((r) => r.booked).length;
   const served = rows.filter((r) => r.served).length;
   const revenue = rows.reduce((sum, r) => sum + r.revenue, 0);
+  const edit = useInquiryEditor();
   const hasContact = rows.some((r) => r.contact);
   const hasRevenue = revenue > 0;
   const exportRows = () => {
@@ -147,7 +149,7 @@ function InquiryDetails({ drill }: { drill: Extract<Drill, { kind: "inquiries" }
       <div className="table-scroll">
         <table className="drill-table">
           <tbody>
-            <tr><th>Date</th><th>Patient</th>{hasContact && <th>Contact</th>}<th>Channel</th><th>Procedure</th><th>Branch</th><th>Outcome</th>{hasRevenue && <th className="num">Revenue</th>}<th>Next step</th></tr>
+            <tr><th>Date</th><th>Patient</th>{hasContact && <th>Contact</th>}<th>Channel</th><th>Procedure</th><th>Branch</th><th>Outcome</th>{hasRevenue && <th className="num">Revenue</th>}<th>Next step</th>{edit && <th></th>}</tr>
             {rows.slice(0, MAX_ROWS).map((r) => (
               <tr key={r.rowKey}>
                 <td>{fmtDate(r.date)}</td>
@@ -157,6 +159,7 @@ function InquiryDetails({ drill }: { drill: Extract<Drill, { kind: "inquiries" }
                 <td className="name">{stateOf(leadState(r)).label}</td>
                 {hasRevenue && <td className="num">{r.revenue ? peso(r.revenue) : "—"}</td>}
                 <td className="name td-wrap">{r.followUp && !r.booked ? `Follow up ${r.followUp}. ` : ""}{r.action || r.remarks || "—"}</td>
+                {edit && <td><button type="button" className="btn btn-outline btn-sm" onClick={() => edit(r)}><PencilLine size={13} />Update</button></td>}
               </tr>
             ))}
           </tbody>

@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import type { LeadState } from "./lead";
 
 /** One billed line item from the Detailed Sales Report. */
 export type SalesRow = {
@@ -47,6 +48,9 @@ export type InquiryRow = {
   referredBy: string;
   campaign: string;
   respondedAt: Date | null;
+  /** Set when staff update the inquiry in the app; overrides what the sheet columns imply. */
+  outcome?: LeadState;
+  editedAt?: Date;
   rowKey: string;
 };
 
@@ -235,6 +239,10 @@ function parseSales(grid: unknown[][], header: { index: number; map: Record<stri
   return rows;
 }
 
+/** Identifies an inquiry by who, how, when and what, so re-uploads and app edits line up with the same row. */
+export const inquiryKey = (patient: string, contact: string, channel: string, date: Date | null, procedure: string) =>
+  [patient.trim().toUpperCase(), contact.replace(/\D/g, ""), channel.trim().toUpperCase(), date ? date.getTime() : "", procedure.trim().toUpperCase()].join("|");
+
 const isBlank = (value: unknown) => /^(|—|–|-+|N\/?A|NONE)$/i.test(clean(value));
 
 function parseConcierge(grid: unknown[][], header: { index: number; map: Record<string, number> }) {
@@ -242,7 +250,7 @@ function parseConcierge(grid: unknown[][], header: { index: number; map: Record<
   const at = (row: unknown[], field: string) => (map[field] >= 0 ? row[map[field]] : "");
   const text = (row: unknown[], field: string) => (isBlank(at(row, field)) ? "" : clean(at(row, field)));
   const rows: InquiryRow[] = [];
-  grid.slice(header.index + 1).forEach((row, offset) => {
+  grid.slice(header.index + 1).forEach((row) => {
     if (!row) return;
     const channel = text(row, "channel");
     const patient = text(row, "patient");
@@ -287,7 +295,7 @@ function parseConcierge(grid: unknown[][], header: { index: number; map: Record<
         const minutes = map.respondedTime >= 0 ? parseTime(at(row, "respondedTime")) : null;
         return day && minutes !== null ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minutes / 60), minutes % 60) : day;
       })(),
-      rowKey: [normalize(patient), normalize(text(row, "contact")), normalize(channel), clean(at(row, "date")), clean(at(row, "time")), normalize(at(row, "procedure")), offset].join("|"),
+      rowKey: inquiryKey(patient, text(row, "contact"), channel || "Not recorded", date, text(row, "procedure")),
     });
   });
   return rows;

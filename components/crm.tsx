@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Eye, PencilLine, Plus } from "lucide-react";
 import { CountChart, MixBar, RankedBars, TrendChart } from "@/components/charts";
 import { clickable, useDrill } from "@/components/drill";
+import { useInquiryEditor } from "@/components/inquiry-editor";
+import { exportTracker } from "@/lib/tracker";
 import { count, longDate, pct, peso, sourceGroup } from "@/lib/analyze";
 import type { CrmFilters, DueStatus, GroupStat } from "@/lib/crm";
 import { analyzeCrm, applyCrmFilters, crmFindings, DEFAULT_CRM_FILTERS, DUE_LABEL, inquiryTopic, stateOf } from "@/lib/crm";
@@ -50,6 +52,7 @@ const DUE_ORDER: DueStatus[] = ["overdue", "today", "upcoming", "unscheduled"];
 
 export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
   const drill = useDrill();
+  const edit = useInquiryEditor();
   const [filters, setFilters] = useState<CrmFilters>(DEFAULT_CRM_FILTERS);
   const [recallMonths, setRecallMonths] = useState(3);
   const [dueFilter, setDueFilter] = useState<DueStatus | "all">("all");
@@ -84,6 +87,10 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
         <div>
           <h1>Patient CRM</h1>
           <p className="sub">Inquiries, bookings, follow-ups and referrals from the concierge scheduling tracker</p>
+          <div className="crm-actions no-print">
+            {edit && <button type="button" className="btn btn-primary" onClick={() => edit()}><Plus size={16} />New inquiry</button>}
+            <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)}><Download size={16} />Export tracker (.xlsx)</button>
+          </div>
         </div>
         <div className="period">
           Inquiries logged<br /><strong>{c.period ? `${longDate(c.period.from)} – ${longDate(c.period.to)}` : "—"}</strong>
@@ -184,7 +191,7 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
             </SectionHead>
             <div className="panel">
               <div className="queue-head">
-                <h3>Follow-up queue: open leads and no-shows to reschedule</h3>
+                <h3>Follow-up queue: open leads and no-shows to reschedule{edit ? <small className="muted"> · click a patient to update after calling</small> : null}</h3>
                 <div className="chips" role="group" aria-label="Filter follow-ups">
                   <button type="button" className={`chip-btn${dueFilter === "all" ? " on" : ""}`} onClick={() => setDueFilter("all")}>All {count(c.queue.length)}</button>
                   {DUE_ORDER.filter((s) => c.dueCounts[s]).map((s) => <button key={s} type="button" className={`chip-btn ${s}${dueFilter === s ? " on" : ""}`} onClick={() => setDueFilter(s)}>{DUE_LABEL[s]} {count(c.dueCounts[s])}</button>)}
@@ -194,14 +201,15 @@ export function CrmDashboard({ rows }: { rows: InquiryRow[] }) {
                 <div className="table-scroll queue">
                   <table>
                     <tbody>
-                      <tr><th>Follow up by</th><th>Patient</th><th>Contact</th><th>Procedure</th><th>Channel</th><th>Branch</th><th>Status</th><th>Next step</th></tr>
+                      <tr><th>Follow up by</th><th>Patient</th><th>Contact</th><th>Procedure</th><th>Channel</th><th>Branch</th><th>Status</th><th>Next step</th>{edit && <th></th>}</tr>
                       {queue.slice(0, 60).map((q) => (
-                        <tr key={q.row.rowKey} className="is-clickable" {...clickable(() => open(q.row.patient || "Inquiry", [q.row]), `${q.row.patient}: details`)}>
+                        <tr key={q.row.rowKey} className="is-clickable" {...clickable(() => (edit ? edit(q.row) : open(q.row.patient || "Inquiry", [q.row])), `Update ${q.row.patient}`)}>
                           <td><span className={`due ${q.status}`}>{q.due ? fmt(q.due) : DUE_LABEL.unscheduled}</span>{q.status === "overdue" && <small className="muted"> {q.daysLate}d late</small>}</td>
                           <td className="name">{q.row.patient || "—"}</td><td>{q.row.contact || "—"}</td><td className="name">{q.row.procedure || "—"}</td>
                           <td className="name">{q.row.channel}</td><td className="name">{q.row.branch}</td>
                           <td className="name">{q.state === "noShow" ? "No-show: reschedule" : "Not booked"}</td>
                           <td className="name td-wrap">{q.row.action || q.row.remarks || q.row.inquired || "—"}</td>
+                          {edit && <td><span className="row-edit"><PencilLine size={14} aria-hidden />Update</span></td>}
                         </tr>
                       ))}
                     </tbody>

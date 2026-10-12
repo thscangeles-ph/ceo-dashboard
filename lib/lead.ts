@@ -16,6 +16,7 @@ const LOST = /NO FURTHER ACTION|CHOSE ANOTHER|ANOTHER (FACILITY|CLINIC|HOSPITAL)
 const CANCELLED = /CANCEL/i;
 
 export function leadState(row: InquiryRow): LeadState {
+  if (row.outcome) return row.outcome;
   const notes = `${row.action} ${row.remarks} ${row.status}`;
   if (row.served) return "served";
   if (row.noShow) return "noShow";
