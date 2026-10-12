@@ -1,5 +1,6 @@
 import type { InquiryRow, SalesRow } from "./parse";
 import { normalize } from "./parse";
+import { needsFollowUp } from "./lead";
 
 export const peso = (value: number) => `₱${Math.round(value).toLocaleString("en-PH")}`;
 export const count = (value: number) => value.toLocaleString("en-PH");
@@ -261,7 +262,7 @@ export type SalesSummary = ReturnType<typeof analyzeSales>;
 export function analyzeInquiries(rows: InquiryRow[]) {
   const booked = rows.filter((r) => r.booked).length;
   const served = rows.filter((r) => r.served).length;
-  const followUps = rows.filter((r) => !r.booked || r.noShow);
+  const followUps = rows.filter(needsFollowUp);
   const channelMap = new Map<string, { inquiries: number; booked: number; served: number }>();
   const branchMap = new Map<string, number>();
   for (const r of rows) {

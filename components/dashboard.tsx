@@ -127,7 +127,7 @@ export function Briefing({ s, findings, decisions, period }: { s: SalesSummary; 
   );
 }
 
-export function Funnel({ q }: { q: InquirySummary }) {
+export function Funnel({ q, onOpenCrm }: { q: InquirySummary; onOpenCrm?: () => void }) {
   const span = q.minDate && q.maxDate ? `${longDate(q.minDate)} – ${longDate(q.maxDate)}` : "the uploaded log";
   const noShows = q.followUps.filter((r) => r.noShow).length;
   const drill = useDrill();
@@ -135,7 +135,10 @@ export function Funnel({ q }: { q: InquirySummary }) {
   const stage: Record<string, typeof q.rows> = { Inquiries: q.rows, Booked: q.rows.filter((r) => r.booked), "Served (completed)": q.rows.filter((r) => r.served) };
   return (
     <section>
-      <h2>Full funnel: Central Concierge log</h2>
+      <div className="section-head-row">
+        <h2>Full funnel: Central Concierge log</h2>
+        {onOpenCrm && <button type="button" className="btn btn-outline no-print" onClick={onOpenCrm}>Open Patient CRM →</button>}
+      </div>
       <p className="section-note">This is the upstream half the billing data can&apos;t see: every inquiry, not just the ones that paid. The log holds <strong>{count(q.inquiries)} inquir{q.inquiries === 1 ? "y" : "ies"} ({span})</strong>.{q.inquiries < 30 ? " That is too few to act on; treat these rates as a pilot, not a baseline." : ""}</p>
       <div className="kpis four">
         <div className="kpi is-clickable" {...clickable(() => open("All inquiries", q.rows), "Inquiries logged: details")}><div className="label">Inquiries logged</div><div className="value">{count(q.inquiries)}</div><div className="note">{span}</div></div>
@@ -169,12 +172,12 @@ export function Funnel({ q }: { q: InquirySummary }) {
       </div>
       {q.followUps.length > 0 && (
         <div className="panel" style={{ marginTop: 18 }}>
-          <h3>Needs follow-up</h3>
+          <h3>Needs follow-up{q.followUps.length > 8 ? ` (first 8 of ${count(q.followUps.length)})` : ""}</h3>
           <div className="table-scroll">
             <table>
               <tbody>
                 <tr><th>Patient</th><th>Status</th><th>Channel</th><th>Branch</th><th>Procedure</th><th>Follow-up by</th></tr>
-                {q.followUps.map((r) => (
+                {q.followUps.slice(0, 8).map((r) => (
                   <tr key={r.rowKey}>
                     <td className="name">{r.patient || "—"}</td>
                     <td className="name">{r.noShow ? "No-show" : "No booking"}{r.remarks ? ` — ${r.remarks}` : r.status && !/^NO/i.test(r.status) ? ` — ${r.status}` : ""}</td>

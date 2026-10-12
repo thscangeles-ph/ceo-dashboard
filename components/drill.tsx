@@ -5,6 +5,8 @@ import * as XLSX from "xlsx";
 import { Download, X } from "lucide-react";
 import type { Drill } from "@/lib/analyze";
 import { count, pct, peso, titleCase, typeGroup } from "@/lib/analyze";
+import { stateOf } from "@/lib/crm";
+import { leadState } from "@/lib/lead";
 import type { SalesRow } from "@/lib/parse";
 
 const DrillContext = createContext<(drill: Drill) => void>(() => undefined);
@@ -113,30 +115,54 @@ function SalesDetails({ drill }: { drill: Extract<Drill, { kind: "sales" }> }) {
 }
 
 function InquiryDetails({ drill }: { drill: Extract<Drill, { kind: "inquiries" }> }) {
-  const booked = drill.rows.filter((r) => r.booked).length;
-  const served = drill.rows.filter((r) => r.served).length;
+  const rows = useMemo(() => [...drill.rows].sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0)), [drill.rows]);
+  const booked = rows.filter((r) => r.booked).length;
+  const served = rows.filter((r) => r.served).length;
+  const revenue = rows.reduce((sum, r) => sum + r.revenue, 0);
+  const hasContact = rows.some((r) => r.contact);
+  const hasRevenue = revenue > 0;
+  const exportRows = () => {
+    const sheet = XLSX.utils.json_to_sheet(rows.map((r) => ({
+      Date: fmtDate(r.date), Time: r.hasTime && r.date ? r.date.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" }) : "",
+      "New or Returning": r.patientStatus, Name: r.patient, "Contact Number": r.contact, "Channel / Source": r.channel, "Procedure / Test": r.procedure,
+      Branch: r.branch, Inquired: r.inquired, Outcome: stateOf(leadState(r)).label, "Follow-up": r.followUp, Reminder: r.reminder,
+      "Booked (Date of Booking)": r.bookedDate ? fmtDate(r.bookedDate) : "", Revenue: r.revenue || "", "Next step / action": r.action || r.remarks,
+    })));
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Inquiries");
+    XLSX.writeFile(book, `${drill.title.replace(/[^\w\s-]/g, "").trim() || "inquiries"}.xlsx`);
+  };
   return (
     <>
       <div className="drill-stats">
-        <div><span>Inquiries</span><b>{count(drill.rows.length)}</b></div>
-        <div><span>Booked</span><b>{count(booked)}</b></div>
+        <div><span>Inquiries</span><b>{count(rows.length)}</b></div>
+        <div><span>Booked</span><b>{count(booked)} <small>{rows.length ? pct(booked / rows.length, 0) : ""}</small></b></div>
         <div><span>Served</span><b>{count(served)}</b></div>
-        <div><span>Booking rate</span><b>{drill.rows.length ? pct(booked / drill.rows.length, 0) : "—"}</b></div>
+        <div><span>Revenue</span><b>{peso(revenue)}</b></div>
       </div>
-      <h4>Inquiries</h4>
+      <div className="drill-records-head">
+        <h4>Inquiries</h4>
+        <button type="button" className="btn btn-outline" onClick={exportRows}><Download size={15} />Download Excel</button>
+      </div>
       <div className="table-scroll">
         <table className="drill-table">
           <tbody>
-            <tr><th>Date</th><th>Patient</th><th>Channel</th><th>Branch</th><th>Procedure</th><th>Status</th><th>Remarks</th></tr>
-            {drill.rows.map((r) => (
+            <tr><th>Date</th><th>Patient</th>{hasContact && <th>Contact</th>}<th>Channel</th><th>Procedure</th><th>Branch</th><th>Outcome</th>{hasRevenue && <th className="num">Revenue</th>}<th>Next step</th></tr>
+            {rows.slice(0, MAX_ROWS).map((r) => (
               <tr key={r.rowKey}>
-                <td>{fmtDate(r.date)}</td><td className="name">{r.patient || "—"}</td><td className="name">{r.channel}</td><td className="name">{r.branch}</td>
-                <td className="name">{r.procedure || "—"}</td><td className="name">{r.noShow ? "No-show" : r.served ? "Served" : r.booked ? "Booked" : "Not booked"}</td><td className="name">{r.remarks || "—"}</td>
+                <td>{fmtDate(r.date)}</td>
+                <td className="name">{r.patient || "—"}{r.patientStatus && <small className="muted"> · {r.patientStatus}</small>}</td>
+                {hasContact && <td>{r.contact || "—"}</td>}
+                <td className="name">{r.channel}</td><td className="name">{r.procedure || "—"}</td><td className="name">{r.branch}</td>
+                <td className="name">{stateOf(leadState(r)).label}</td>
+                {hasRevenue && <td className="num">{r.revenue ? peso(r.revenue) : "—"}</td>}
+                <td className="name td-wrap">{r.followUp && !r.booked ? `Follow up ${r.followUp}. ` : ""}{r.action || r.remarks || "—"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {rows.length > MAX_ROWS && <p className="drill-meta">Showing the first {MAX_ROWS} of {count(rows.length)} inquiries. Download Excel for all of them.</p>}
     </>
   );
 }

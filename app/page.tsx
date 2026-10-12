@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, ClipboardList, Download, FileSpreadsheet, MousePointerClick, Printer, RefreshCw, ShieldCheck, Smartphone, Upload } from "lucide-react";
+import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, Download, FileSpreadsheet, MousePointerClick, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
+import { CrmDashboard } from "@/components/crm";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
 import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
@@ -29,6 +30,7 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
+  const [tab, setTab] = useState<"summary" | "crm">("summary");
 
   const processFiles = useCallback(async (incoming: File[]) => {
     const excelFiles = incoming.filter((file) => EXCEL.test(file.name));
@@ -56,6 +58,9 @@ export default function Home() {
         from: "", to: "",
       });
       setError(parsed.problems.join(" "));
+      // Land on the tab the new file belongs to.
+      if (parsed.inquiries.length && !parsed.sales.length) setTab("crm");
+      else if (parsed.sales.length && !parsed.inquiries.length) setTab("summary");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workbook could not be read.");
     } finally {
@@ -75,7 +80,7 @@ export default function Home() {
     });
   }, []);
 
-  const reset = () => { setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); };
+  const reset = () => { setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
 
   const hasTypes = sales.some((row) => row.patientType);
   // Unique patients per patient-type option, shown in the filter so empty types are obvious.
@@ -125,7 +130,7 @@ export default function Home() {
           <div className="appbar-actions">
             <InstallAppButton />
             {hasData && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
-            {summary && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
+            {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
             {hasData && <button type="button" className="btn btn-ghost" onClick={reset} aria-label="Start over"><RefreshCw size={16} /><span className="hide-sm">Start over</span></button>}
           </div>
         </div>
@@ -154,19 +159,30 @@ export default function Home() {
         {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Check the workbook.</strong> {error}</div></div>}
         {sheets.length > 0 && (
           <div className="loaded no-print" aria-label="Loaded sheets">
-            {sheets.map((sheet) => <span key={`${sheet.file}|${sheet.sheet}`} className="chip"><CheckCircle2 size={14} /><span>{sheet.file} › {sheet.sheet}</span><small>{sheet.kind === "sales" ? "sales" : "concierge"} · {count(sheet.rows)} rows</small></span>)}
+            {sheets.map((sheet) => <span key={`${sheet.file}|${sheet.sheet}`} className="chip"><CheckCircle2 size={14} /><span>{sheet.file} › {sheet.sheet}</span><small>{sheet.kind === "sales" ? "sales report" : "scheduling tracker"} · {count(sheet.rows)} rows</small></span>)}
           </div>
         )}
+
+        {hasData && (
+          <nav className="tabs no-print" aria-label="Dashboard sections">
+            <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>
+            <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} />Patient CRM{inquiries.length ? <small>{count(inquiries.length)}</small> : <span className="hide-sm"> (no tracker)</span>}</button>
+          </nav>
+        )}
+
+        {hasData && tab === "crm" && (inquiries.length
+          ? <CrmDashboard rows={inquiries} />
+          : <div className="panel empty-tab"><h3><ClipboardList size={16} />Upload the scheduling tracker</h3><p className="empty-note">Add the concierge scheduling tracker (the Excel staff fill in for every inquiry) with <strong>Add files</strong>. The CRM shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p></div>)}
 
         {!hasData && (
           <div className="welcome">
             <div className="panel"><h3><FileSpreadsheet size={16} />Sales report columns</h3><p>Needs <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>. Also uses <code>Transaction No.</code>, <code>Patient Type</code>, <code>Status</code>, <code>Source</code>, <code>Referring Physician</code>, <code>Department</code>, <code>Test Examination</code>, <code>Patient Category</code>, <code>Gross Amount</code> and <code>Discount</code> when present.</p></div>
-            <div className="panel"><h3><ClipboardList size={16} />Concierge log columns</h3><p>Needs <code>Channel</code> and <code>Status</code> (Booked, Served, No-show, No booking). Also uses <code>Date</code>, <code>Patient Name</code>, <code>Branch</code>, <code>Procedure</code>, <code>Follow-up Date</code> and <code>Remarks</code>.</p></div>
+            <div className="panel"><h3><ClipboardList size={16} />Scheduling tracker (CRM)</h3><p>The concierge sheet staff fill in: <code>New or Returning Patient</code>, <code>Date</code>, <code>Time</code>, <code>Channel / Source</code>, <code>Name</code>, <code>Contact Number</code>, <code>Procedure / Test</code>, <code>Branch</code>, <code>Inquired</code>, follow-up and reminder dates, <code>Booked</code>, <code>No Show</code>, <code>Served</code> and <code>Revenue</code>. It opens the Patient CRM tab.</p></div>
             <div className="panel"><h3><Smartphone size={16} />Use it as an app</h3><p>Tap <strong>Install app</strong> above (Chrome or Edge on PC and Android), or in Safari on iPhone tap <strong>Share → Add to Home Screen</strong>. It opens full screen and works offline.</p></div>
           </div>
         )}
 
-        {sales.length > 0 && (
+        {tab === "summary" && sales.length > 0 && (
           <>
             <header className="top">
               <div>
@@ -205,7 +221,7 @@ export default function Home() {
                 <Kpis s={summary} typeKey={hasTypes ? filters.patientType : "all"} />
                 {hasTypes && filters.patientType === "all" && <PatientTypes s={summary} />}
                 <section><Briefing s={summary} findings={findings} decisions={decisions} period={period} /></section>
-                {funnel && <Funnel q={funnel} />}
+                {funnel && <Funnel q={funnel} onOpenCrm={() => { setTab("crm"); window.scrollTo({ top: 0 }); }} />}
                 <DailyVolume s={summary} />
                 <Sources s={summary} />
                 <RevenueMix s={summary} />
@@ -221,14 +237,11 @@ export default function Home() {
           </>
         )}
 
-        {sales.length === 0 && funnel && (
-          <>
-            <header className="top"><div><h1>CEO Summary Dashboard</h1><p className="sub">Only a concierge log is loaded. Add the Detailed Sales Report to see revenue and patients.</p></div></header>
-            <Funnel q={funnel} />
-          </>
+        {tab === "summary" && sales.length === 0 && funnel && (
+          <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />Upload the Detailed Sales Report</h3><p className="empty-note">Only the scheduling tracker is loaded. Add the sales report with <strong>Add files</strong> to see revenue, patient types, sources and physicians here, or open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>Patient CRM</button>.</p></div>
         )}
       </div>
-      <DrillPanel drill={drill} onClose={closeDrill} context={[period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
+      <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Scheduling tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
     </main>
     </DrillProvider>
   );

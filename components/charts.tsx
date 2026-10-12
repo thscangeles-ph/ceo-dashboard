@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { count, peso } from "@/lib/analyze";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
@@ -40,8 +40,9 @@ export function RankedBars({ items, color, format = peso, label, onSelect }: { i
 }
 
 /** A 100% stacked bar showing part-to-whole, with a legend that names every part. */
-export function MixBar({ parts, label, onSelect }: { parts: { key: string; label: string; color: string; value: number; note: string }[]; label: string; onSelect?: (key: string) => void }) {
+export function MixBar({ parts, label, onSelect, unit = "peso" }: { parts: { key: string; label: string; color: string; value: number; note: string }[]; label: string; onSelect?: (key: string) => void; unit?: "peso" | "count" }) {
   const total = parts.reduce((sum, p) => sum + p.value, 0) || 1;
+  const fmt = unit === "count" ? count : peso;
   return (
     <div className="mix">
       <div className="mix-bar" role="img" aria-label={`${label}: ${parts.map((p) => `${p.label} ${((p.value / total) * 100).toFixed(1)} percent`).join(", ")}`}>
@@ -51,13 +52,13 @@ export function MixBar({ parts, label, onSelect }: { parts: { key: string; label
           const style = { width: `${share}%`, background: p.color, color: p.color.replace(/\)$/, "-text)") };
           const text = share >= 11 ? `${share.toFixed(1)}%` : "";
           return onSelect
-            ? <button type="button" key={p.key} tabIndex={-1} aria-hidden onClick={() => onSelect(p.key)} title={`${p.label}: ${peso(p.value)} (${share.toFixed(1)}%) · click for details`} style={style}>{text}</button>
-            : <span key={p.key} title={`${p.label}: ${peso(p.value)} (${share.toFixed(1)}%)`} style={style}>{text}</span>;
+            ? <button type="button" key={p.key} tabIndex={-1} aria-hidden onClick={() => onSelect(p.key)} title={`${p.label}: ${fmt(p.value)} (${share.toFixed(1)}%) · click for details`} style={style}>{text}</button>
+            : <span key={p.key} title={`${p.label}: ${fmt(p.value)} (${share.toFixed(1)}%)`} style={style}>{text}</span>;
         })}
       </div>
       <div className="mix-legend">
         {parts.map((p) => {
-          const content = <><i style={{ background: p.color }} />{p.label} <b>{peso(p.value)}</b> · {p.note}</>;
+          const content = <><i style={{ background: p.color }} />{p.label} <b>{fmt(p.value)}</b> · {p.note}</>;
           return onSelect
             ? <button type="button" key={p.key} className="legend-btn" onClick={() => onSelect(p.key)} title="Click for details">{content}</button>
             : <span key={p.key}>{content}</span>;
@@ -94,6 +95,41 @@ export function ServiceChart({ data, onSelect }: { data: { name: string; revenue
           <YAxis tick={axisTick} tickLine={false} axisLine={false} width={48} tickFormatter={compactPeso} />
           <Tooltip cursor={{ fill: "var(--line)", opacity: 0.4 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(value) => [peso(Number(value)), "Revenue"]} labelFormatter={(label) => (onSelect ? `${label} · click for details` : label)} />
           <Bar dataKey="revenue" fill="var(--s2)" radius={[4, 4, 0, 0]} maxBarSize={56} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Counts over time for a few series that share one unit (inquiries, bookings, served). */
+export function TrendChart({ data, series, onSelect }: { data: object[]; series: { key: string; label: string; color: string }[]; onSelect?: (index: number) => void }) {
+  return (
+    <div className={`chart-box${onSelect ? " is-clickable" : ""}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} onClick={(state: ChartClick) => { const i = clickedIndex(state); if (i !== null) onSelect?.(i); }}>
+          <CartesianGrid vertical={false} stroke="var(--line)" />
+          <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval="preserveStartEnd" minTickGap={8} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+          <Tooltip contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} labelFormatter={(label) => (onSelect ? `Week of ${label} · click for details` : `Week of ${label}`)} />
+          <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: "var(--ink-soft)" }} />
+          {series.map((s) => <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={{ r: 3, fill: s.color, stroke: "var(--panel)", strokeWidth: 2 }} activeDot={{ r: 5 }} isAnimationActive={false} />)}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Plain vertical count bars (inquiries by hour, by weekday …). */
+export function CountChart({ data, label, color = "var(--s2)", onSelect }: { data: { label: string; value: number }[]; label: string; color?: string; onSelect?: (index: number) => void }) {
+  return (
+    <div className={`chart-box${onSelect ? " is-clickable" : ""}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} onClick={(state: ChartClick) => { const i = clickedIndex(state); if (i !== null) onSelect?.(i); }}>
+          <CartesianGrid vertical={false} stroke="var(--line)" />
+          <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval="preserveStartEnd" minTickGap={4} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+          <Tooltip cursor={{ fill: "var(--line)", opacity: 0.4 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(value) => [count(Number(value)), label]} labelFormatter={(l) => (onSelect ? `${l} · click for details` : l)} />
+          <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} maxBarSize={40} />
         </BarChart>
       </ResponsiveContainer>
     </div>

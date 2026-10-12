@@ -10,6 +10,7 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **Where new patients come from**: revenue, patients and average per patient by source (NEW and HMO/NEW only, since returning patients have no source)
 - **Revenue mix**: by service line (department) and by patient category (Regular, Senior, PWD)
 - **Top referring physicians**
+- **Patient CRM tab** (from the scheduling tracker), organised by the eight CRM functions: inquiry management (what patients ask, weekly trend, next step recorded), appointment management (bookings, no-shows, cancellations), follow-up reminders (a follow-up queue of overdue and upcoming call-backs, reminder coverage), patient retention (recall list, new vs. returning), referral management, marketing analysis (booking rate and revenue per channel or campaign), concierge monitoring (when inquiries arrive, branches, staff and response time) and business analytics (demand by procedure)
 
 **Everything is clickable.** Click a KPI card, chart bar, bar segment, legend item, finding or table row to open a details panel with the records behind that number: patients, visits, revenue, breakdowns by patient type and service, and the billed line items, which can be downloaded as Excel. Patient names are not shown for sales data.
 
@@ -45,7 +46,7 @@ Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the heade
 | Patient category | `Patient Category`, `Discount Type`, or `Category` holding REGULAR / SENIOR / PWD |
 | Gross / discount | `Gross Amount`, `Amount`; `Discount` |
 
-**Central Concierge log** (one row per inquiry, as a separate file or another sheet). Required: `Channel` and `Status`. Status values such as *Booked*, *Served/Completed*, *No-show* and *No booking* drive the funnel. Also used: `Date`, `Patient Name`, `Branch`, `Procedure`, `Follow-up Date`, `Remarks`.
+**Scheduling tracker (Patient CRM)**: the concierge sheet staff fill in for every inquiry, as a separate file or another sheet. The app recognises its columns: `New or Returning Patient`, `Date`, `Time`, `Channel / Source`, `Name`, `Contact Number`, `Procedure / Test`, `Branch`, `Mode of Payment`, `Inquired`, `If not booked, schedule of follow-up`, `If booked, send a reminder`, `Booked (Date of Booking)`, `No Show`, `Served`, `Revenue (Cost of Procedure)` and `Other Applicable Actions (Follow-up)`. Optional columns unlock more of the CRM: `Staff` (staff performance), `Date Responded` (response time), `Referred By` (referral partners), `Campaign` (marketing) and `Appointment Date` (reminder timing, recalls). Simpler logs with `Channel` and `Status` (Booked, Served, No-show, No booking) still work.
 
 **Download template** on the start screen produces a workbook with both sheets and example rows.
 
