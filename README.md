@@ -43,7 +43,7 @@ The database enforces this (Row Level Security and de-identified views), not onl
 1. **Supabase → SQL Editor → New query:** paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. Run it again whenever this file changes; it is safe to re-run.
 2. **Authentication → Sign In / Providers:** turn off **Allow new users to sign up**.
 3. **Authentication → URL Configuration:** set **Site URL** to the app's Vercel address and add it under **Redirect URLs** (invite and password-reset emails link there).
-4. **Email templates** (so email apps that pre-open links to scan them can't use them up): in **Authentication → Emails → Templates**, replace the link in two templates:
+4. **Email templates** (optional; only if you want email invitations). On the free plan Supabase only lets you edit templates after connecting your own email sender (Authentication → Emails → **Set up SMTP**). Without it, create accounts with a password instead (the default in Team → Add person). With SMTP set up, change these two templates so email apps that pre-open links to scan them can't use them up: in **Authentication → Emails → Templates**, replace the link in two templates:
    - **Invite user:** `<a href="{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=invite">Accept the invite and set your password</a>`
    - **Reset password:** `<a href="{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=recovery">Set a new password</a>`
 

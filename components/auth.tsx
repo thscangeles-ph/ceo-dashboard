@@ -137,6 +137,19 @@ export function NoAccessScreen({ email, error, onSignOut }: { email: string; err
   );
 }
 
+/** Easy-to-read temporary password, e.g. "Amber-4827-Pulse". */
+function generatePassword() {
+  const words = ["Heart", "Gold", "Pulse", "Cedar", "River", "Maple", "Coral", "Amber", "Delta", "Nova", "Summit", "Harbor"];
+  const n = new Uint32Array(3);
+  crypto.getRandomValues(n);
+  return `${words[n[0] % words.length]}-${1000 + (n[1] % 9000)}-${words[n[2] % words.length]}`;
+}
+
+function Copy({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return <button type="button" className="btn btn-outline btn-sm" onClick={() => { void navigator.clipboard?.writeText(text).then(() => setDone(true)); }}>{done ? "Copied" : "Copy"}</button>;
+}
+
 const ACCESS_OPTIONS: { value: Role | "none"; label: string }[] = [
   { value: "admin", label: `${ROLE_LABEL.admin}: everything` },
   { value: "concierge", label: `${ROLE_LABEL.concierge}: Patient CRM` },
@@ -149,18 +162,19 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
   const [people, setPeople] = useState<Profile[] | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState("");
-  const [form, setForm] = useState<NewMember>({ email: "", fullName: "", role: "concierge", method: "invite", password: "" });
+  // Temporary passwords are the default: Supabase's free email sender can't use scanner-proof invite links.
+  const [form, setForm] = useState<NewMember>(() => ({ email: "", fullName: "", role: "concierge", method: "password", password: generatePassword() }));
   const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState("");
+  const [added, setAdded] = useState<{ text: string; password?: string } | null>(null);
   const [pwFor, setPwFor] = useState<string | null>(null);
   const [newPw, setNewPw] = useState("");
-  const [pwDone, setPwDone] = useState("");
+  const [pwDone, setPwDone] = useState<{ text: string; password: string } | null>(null);
 
   const savePassword = async (person: Profile) => {
-    setSaving(person.id); setError(""); setPwDone("");
+    setSaving(person.id); setError(""); setPwDone(null);
     try {
       await setMemberPassword(getCloud()!, person.id, newPw);
-      setPwDone(`${person.email} can now sign in with the password you set. Give it to them privately; they can change it with Forgot your password?`);
+      setPwDone({ text: `${person.email} can now sign in with this password. Give it to them privately; they can change it later with Forgot your password?`, password: newPw });
       setPwFor(null); setNewPw("");
     } catch (e) { setError((e as Error).message); }
     setSaving("");
@@ -188,13 +202,13 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
 
   const add = async (event: React.FormEvent) => {
     event.preventDefault();
-    setAdding(true); setError(""); setAdded("");
+    setAdding(true); setError(""); setAdded(null);
     try {
       const result = await createMember(getCloud()!, form);
       setAdded(result.invited
-        ? `Invitation sent to ${result.email}. They set their own password from the email, then sign in as ${ROLE_LABEL[result.role]}.`
-        : `${result.email} can sign in now as ${ROLE_LABEL[result.role]} with the temporary password. Ask them to change it (Forgot your password? on the sign-in screen).`);
-      setForm((f) => ({ ...f, email: "", fullName: "", password: "" }));
+        ? { text: `Invitation sent to ${result.email}. They set their own password from the email, then sign in as ${ROLE_LABEL[result.role]}.` }
+        : { text: `${result.email} can sign in now as ${ROLE_LABEL[result.role]}. Give them this password privately (not in a group chat):`, password: form.password });
+      setForm((f) => ({ ...f, email: "", fullName: "", password: generatePassword() }));
       await reload();
     } catch (e) { setError((e as Error).message); }
     setAdding(false);
@@ -225,18 +239,25 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
               </label>
               <label className="full">How they get in
                 <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as NewMember["method"] })}>
-                  <option value="invite">Email them an invitation (they choose their own password)</option>
-                  <option value="password">Set a temporary password now (share it with them yourself)</option>
+                  <option value="password">Set a password now (you give it to them yourself)</option>
+                  <option value="invite">Email an invitation (works best with your own email sender set up in Supabase)</option>
                 </select>
               </label>
-              {form.method === "password" && <label className="wide">Temporary password<input type="text" minLength={8} required value={form.password} autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>}
+              {form.method === "password" && (
+                <label className="full">Password
+                  <div className="pw-row" style={{ marginTop: 0 }}>
+                    <input type="text" minLength={8} required value={form.password} autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setForm({ ...form, password: generatePassword() })}>Generate</button>
+                  </div>
+                </label>
+              )}
             </div>
-            {added && <div className="notice" role="status"><div>{added}</div></div>}
+            {added && <div className="notice" role="status"><div>{added.text}{added.password && <div className="pw-show"><code>{added.password}</code><Copy text={added.password} /></div>}</div></div>}
             <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 14 }}><UserPlus size={15} />{adding ? "Creating…" : "Create account"}</button>
           </form>
 
           {error && <div className="alert" role="alert"><div>{error}</div></div>}
-          {pwDone && <div className="notice" role="status"><div>{pwDone}</div></div>}
+          {pwDone && <div className="notice" role="status"><div>{pwDone.text}<div className="pw-show"><code>{pwDone.password}</code><Copy text={pwDone.password} /></div></div></div>}
           <h4>Everyone with a login</h4>
           {!people ? <p className="empty-note">Loading…</p> : (
             <div className="table-scroll">
@@ -253,12 +274,13 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
                         {pwFor === p.id && (
                           <form className="pw-row" onSubmit={(e) => { e.preventDefault(); void savePassword(p); }}>
                             <input type="text" minLength={8} required autoFocus placeholder="New password (8+ characters)" value={newPw} autoComplete="off" onChange={(e) => setNewPw(e.target.value)} />
+                            <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewPw(generatePassword())}>Generate</button>
                             <button type="submit" className="btn btn-primary btn-sm" disabled={saving === p.id}>Save</button>
                             <button type="button" className="btn btn-outline btn-sm" onClick={() => { setPwFor(null); setNewPw(""); }}>Cancel</button>
                           </form>
                         )}
                       </td>
-                      <td>{pwFor !== p.id && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setPwFor(p.id); setNewPw(""); setPwDone(""); }}><KeyRound size={13} />Set password</button>}</td>
+                      <td>{pwFor !== p.id && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setPwFor(p.id); setNewPw(generatePassword()); setPwDone(null); }}><KeyRound size={13} />Set password</button>}</td>
                     </tr>
                   ))}
                 </tbody>
