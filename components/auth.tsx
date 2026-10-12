@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
 import type { NewMember, Profile, Role } from "@/lib/cloud";
-import { createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
+import { configProblem, createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -61,6 +61,7 @@ export function LoginScreen({ linkError }: { linkError?: string }) {
       <span className="tag">THSC team sign-in</span>
       <h1>{mode === "login" ? "Sign in" : "Reset your password"}</h1>
       <p className="sub">{mode === "login" ? "Use the email and password the clinic gave you." : "Enter your email and we'll send a link to set a new password."}</p>
+      {configProblem && <div className="alert" role="alert"><div>{configProblem}</div></div>}
       <form className="auth-form" onSubmit={submit}>
         <label>Email<div className="input-icon"><Mail size={16} aria-hidden /><input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label>
         {mode === "login" && <label>Password<div className="input-icon"><KeyRound size={16} aria-hidden /><input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div></label>}

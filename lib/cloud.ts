@@ -8,12 +8,27 @@ import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
  * the app keeps working on the device only. The key is public by design; Row Level Security in
  * supabase/schema.sql decides what each signed-in person can read or change.
  */
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+// Pasted values often carry spaces, line breaks or quotes, which Supabase rejects as "Invalid API key".
+const tidy = (value?: string) => value?.trim().replace(/^["']+|["']+$/g, "").trim() || undefined;
+const URL = tidy(process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
+const KEY = tidy(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) || tidy(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+
+/** A secret / service_role key must never be used in the browser: it bypasses every access rule. */
+function isSecretKey(key?: string) {
+  if (!key) return false;
+  if (key.startsWith("sb_secret_")) return true;
+  try { return JSON.parse(atob(key.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).role === "service_role"; } catch { return false; }
+}
+/** Set when the Vercel settings are wrong in a way the app can tell before calling Supabase. */
+export const configProblem = !URL || !KEY ? "" : isSecretKey(KEY)
+  ? "Setup problem: NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel holds the SECRET key. Replace it with the publishable (anon) key, redeploy, and then rotate the secret key in Supabase because it was exposed."
+  : !/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(URL) && !/^http:\/\/localhost:\d+$/.test(URL)
+    ? `Setup problem: NEXT_PUBLIC_SUPABASE_URL in Vercel should look like https://abcdefgh.supabase.co (it is "${URL}"). Fix it and redeploy.`
+    : "";
 
 let client: SupabaseClient | null = null;
 export function getCloud() {
-  if (!URL || !KEY || typeof window === "undefined") return null;
+  if (!URL || !KEY || configProblem || typeof window === "undefined") return null;
   client ??= createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
   return client;
 }
@@ -129,6 +144,7 @@ export async function deleteInquiry(sb: SupabaseClient, key: string) {
 /** Plain-language versions of the errors staff are most likely to hit. */
 export function friendly(message: string) {
   if (/invalid login credentials/i.test(message)) return "Wrong email or password.";
+  if (/invalid api key|no api key|apikey/i.test(message)) return "Setup problem: the app's Supabase key is wrong (Invalid API key). In Vercel → Settings → Environment Variables, set NEXT_PUBLIC_SUPABASE_ANON_KEY to the Publishable (anon) key from the same Supabase project as NEXT_PUBLIC_SUPABASE_URL, then redeploy.";
   if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask the admin to confirm the user in Supabase.";
   if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask the CEO / Doctor account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";

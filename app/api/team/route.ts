@@ -15,8 +15,9 @@ const reply = (status: number, body: object) => Response.json(body, { status, he
 
 /** Returns an admin Supabase client when the caller is a signed-in CEO / Doctor, or the error reply. */
 async function asCeo(request: Request) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  const tidy = (value?: string) => value?.trim().replace(/^["']+|["']+$/g, "").trim() || undefined;
+  const url = tidy(process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
+  const serviceKey = tidy(process.env.SUPABASE_SERVICE_ROLE_KEY) || tidy(process.env.SUPABASE_SECRET_KEY);
   if (!url || !serviceKey) {
     return { error: reply(501, { error: "Managing logins from the app isn't switched on yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel and redeploy, or use Supabase → Authentication → Users." }) };
   }

@@ -9,7 +9,7 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember 
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
 import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
 import { DrillPanel, DrillProvider } from "@/components/drill";
@@ -53,7 +53,7 @@ export default function Home() {
   const [restoring, setRestoring] = useState(true);
 
   // With Supabase configured, everyone signs in and shares one set of data (see lib/cloud.ts).
-  const [auth, setAuth] = useState<AuthState>(cloudConfigured ? { status: "loading" } : { status: "local" });
+  const [auth, setAuth] = useState<AuthState>(cloudConfigured ? (configProblem ? { status: "signedOut" } : { status: "loading" }) : { status: "local" });
   const role: Role = auth.status === "signedIn" ? auth.role : "admin";
   const cloud = auth.status === "signedIn";
   const canEdit = role !== "marketing"; // Marketing accounts are read-only
@@ -64,7 +64,7 @@ export default function Home() {
   const [syncedAt, setSyncedAt] = useState<Date | null>(null);
 
   useEffect(() => {
-    if (!cloudConfigured) return;
+    if (!cloudConfigured || configProblem) return; // a setup problem is shown on the sign-in screen
     const sb = getCloud()!;
     // Invite and password-reset emails land here. Older email templates put the type in the URL hash;
     // the recommended templates send ?token_hash=…&type=…, which is only used when the person clicks
