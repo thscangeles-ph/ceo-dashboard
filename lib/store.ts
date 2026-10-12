@@ -7,7 +7,7 @@ import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
  */
 export type Workspace = { version: 1; savedAt: Date; sales: SalesRow[]; inquiries: InquiryRow[]; sheets: SheetSummary[] };
 
-const DB = "thsc-ceo-dashboard";
+const DB = "thsc-ceo-dashboard"; // kept from the app's first name so data already saved on devices is still found
 const STORE = "workspace";
 const KEY = "current";
 const PREF = "thsc-ceo-remember";

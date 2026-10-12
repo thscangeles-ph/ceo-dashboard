@@ -13,7 +13,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <div className="appbar-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/theheartspecialists.png" alt="" width={36} height={48} />
-            <div style={{ minWidth: 0 }}><div className="clinic">THE HEART SPECIALISTS CLINIC</div><div className="app">CEO Dashboard</div></div>
+            <div style={{ minWidth: 0 }}><div className="clinic">THE HEART SPECIALISTS CLINIC</div><div className="app">Summary Dashboard</div></div>
           </div>
         </div>
       </div>

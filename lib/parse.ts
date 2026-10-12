@@ -361,5 +361,5 @@ export function downloadTemplate() {
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(sales), "Sales Report");
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(concierge), "Scheduling Tracker");
-  XLSX.writeFile(book, "THSC CEO Dashboard template.xlsx");
+  XLSX.writeFile(book, "THSC Summary Dashboard template.xlsx");
 }

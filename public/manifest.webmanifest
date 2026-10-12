@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "THSC CEO Dashboard",
-  "short_name": "CEO Dashboard",
-  "description": "Upload THSC Excel reports to generate the CEO summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
+  "name": "THSC Summary Dashboard",
+  "short_name": "Summary Dashboard",
+  "description": "Upload THSC Excel reports to generate the summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

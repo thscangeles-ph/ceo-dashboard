@@ -1,4 +1,4 @@
--- THSC CEO Dashboard: database setup.
+-- THSC Summary Dashboard: database setup.
 -- Run in Supabase: Dashboard → SQL Editor → New query → paste this whole file → Run.
 -- Safe to run again (also after an earlier version of this file): it only adds or updates what changed.
 --

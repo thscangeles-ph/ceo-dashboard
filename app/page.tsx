@@ -304,7 +304,7 @@ export default function Home() {
           <div className="appbar-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/theheartspecialists.png" alt="" width={36} height={48} />
-            <div style={{ minWidth: 0 }}><div className="clinic">THE HEART SPECIALISTS CLINIC</div><div className="app">CEO Dashboard</div></div>
+            <div style={{ minWidth: 0 }}><div className="clinic">THE HEART SPECIALISTS CLINIC</div><div className="app">Summary Dashboard</div></div>
           </div>
           <div className="appbar-actions">
             <InstallAppButton />
@@ -380,7 +380,7 @@ export default function Home() {
 
         {hasData && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
-            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />CEO summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
+            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} />Summary{!sales.length && <span className="hide-sm"> (no sales report)</span>}</button>}
             <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} />Patient CRM{inquiries.length ? <small>{count(inquiries.length)}</small> : <span className="hide-sm"> (no tracker)</span>}</button>
           </nav>
         )}
@@ -401,7 +401,7 @@ export default function Home() {
           <>
             <header className="top">
               <div>
-                <h1>CEO Summary Dashboard</h1>
+                <h1>Summary Dashboard</h1>
                 <p className="sub">The Heart Specialists Clinic &amp; Diagnostic: revenue, patients and where they come from</p>
               </div>
               <div className="period">

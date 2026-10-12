@@ -1,6 +1,6 @@
-# THSC CEO Dashboard
+# THSC Summary Dashboard
 
-The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. Upload the Excel export and it generates the CEO Summary Dashboard:
+The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. Upload the Excel export and it generates the Summary Dashboard:
 
 - **Patients by type**: NEW, Returning (Scheduled, Walk-in, HMO), Home service, Send-in and Clinical trial, with patients, visits, revenue and share for each
 - **KPIs**: patients, total revenue, average and median revenue per patient, items per visit, discounts given
@@ -32,9 +32,9 @@ With Supabase connected, everyone signs in and the whole team shares one set of 
 
 | Account | Sees and does |
 | --- | --- |
-| **CEO / Doctor** | Everything: CEO summary (sales), Patient CRM, and **Team** to create accounts and change access |
+| **CEO / Doctor** | Everything: Summary (sales), Patient CRM, and **Team** to create accounts and change access |
 | **Concierge** | Patient CRM with patient names and numbers: log and update inquiries, follow-up queue, export the tracker |
-| **Marketing** | Read-only CEO summary and CRM analytics. Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
+| **Marketing** | Read-only Summary and CRM analytics. Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
 
 The database enforces this (Row Level Security and de-identified views), not only the screens.
 
@@ -75,7 +75,7 @@ Edits made in the app win over older copies of the same row when the Excel file 
 
 The dashboard is a Progressive Web App. Once installed, it opens in its own window (or full screen on a phone) and keeps working without a connection.
 
-- **Windows / Mac (Chrome or Edge):** open the site and click **Install app** in the header, or the install icon in the address bar. On a computer, Excel files can also be opened with the installed app ("Open with → CEO Dashboard").
+- **Windows / Mac (Chrome or Edge):** open the site and click **Install app** in the header, or the install icon in the address bar. On a computer, Excel files can also be opened with the installed app ("Open with → Summary Dashboard").
 - **Android (Chrome):** tap **Install app**, or browser menu → **Install app** / **Add to Home screen**.
 - **iPhone and iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen**. The **Install app** button shows these steps.
 

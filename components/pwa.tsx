@@ -56,7 +56,7 @@ export function InstallAppButton() {
           <ol>
             <li>In Safari, tap the <Share size={15} className="inline-icon" /> <strong>Share</strong> button.</li>
             <li>Tap <strong>Add to Home Screen</strong>.</li>
-            <li>Tap <strong>Add</strong>. The CEO Dashboard opens from your home screen, full screen.</li>
+            <li>Tap <strong>Add</strong>. The Summary Dashboard opens from your home screen, full screen.</li>
           </ol>
         </div>
       )}

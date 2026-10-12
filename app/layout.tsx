@@ -9,10 +9,10 @@ import { RegisterServiceWorker } from "@/components/pwa";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "THSC CEO Dashboard",
-  description: "Upload THSC Excel reports to generate the CEO summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
+  title: "THSC Summary Dashboard",
+  description: "Upload THSC Excel reports to generate the summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "CEO Dashboard", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Summary Dashboard", statusBarStyle: "black-translucent" },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
