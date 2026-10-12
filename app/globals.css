@@ -199,6 +199,16 @@ section > .grid-2 + .panel, section > .grid-even + .panel, section > .panel + .g
 .crm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .row-edit { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-sans-stack); font-size: .76rem; font-weight: 600; color: var(--gold); white-space: nowrap; }
 
+/* Sales report files on the Sales Dashboard */
+.files-panel { margin-bottom: 18px; }
+.files-panel h3 { display: flex; align-items: center; gap: 8px; }
+.file-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.file-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.file-list li > div { display: grid; gap: 2px; min-width: 0; }
+.file-list strong { font-size: .9rem; overflow-wrap: anywhere; }
+.file-list small { font-size: .78rem; color: var(--ink-soft); }
+.file-list .btn { flex-shrink: 0; }
+
 /* Inquiry Tracker: the scheduling tracker as an editable sheet */
 .trk-filters { margin-bottom: 12px; }
 .trk-search span { position: relative; display: block; }

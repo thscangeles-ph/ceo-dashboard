@@ -9,16 +9,17 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember 
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deleteSales, deleteSheets, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
 import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
 import { InquiryTracker } from "@/components/tracker";
+import { SalesFiles } from "@/components/sales-files";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
 import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
 import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isPaid, longDate, matchesType, PATIENT_TYPES, patientTypeInfo } from "@/lib/analyze";
 import type { InquiryRow, SalesRow, SheetSummary } from "@/lib/parse";
-import { downloadTemplate, inquiryKey, parseWorkbooks } from "@/lib/parse";
+import { downloadTemplate, inquiryKey, LEGACY_UPLOAD, parseWorkbooks, sheetKey } from "@/lib/parse";
 
 type LaunchParams = { files: { getFile: () => Promise<File> }[] };
 declare global {
@@ -225,7 +226,13 @@ export default function Home() {
       if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an admin. Your account can add the scheduling tracker.");
       // Adding files merges them with what is already loaded; identical rows are counted once.
       const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
-      newSales.forEach((row) => salesMap.set(row.rowKey, row));
+      // A row already loaded from another file keeps that file as an owner too, so removing either file leaves it in place.
+      const touchedSales = new Map<string, SalesRow>();
+      newSales.forEach((row) => {
+        const old = salesMap.get(row.rowKey);
+        const next = old ? { ...row, uploads: Array.from(new Set([...(old.uploads ?? [LEGACY_UPLOAD]), ...(row.uploads ?? [])])) } : row;
+        salesMap.set(row.rowKey, next); touchedSales.set(row.rowKey, next);
+      });
       const inquiryMap = new Map(inquiries.map((row) => [row.rowKey, row]));
       // Inquiries added in the app come back from an exported tracker under a key made from their
       // columns; match them to the app's row so re-uploading the export doesn't duplicate them.
@@ -237,15 +244,15 @@ export default function Home() {
       if (cloud) {
         const sb = getCloud()!;
         await saveInquiries(sb, changedInquiries);
-        await saveSales(sb, newSales);
+        await saveSales(sb, Array.from(touchedSales.values()));
         await saveSheets(sb, newSheets);
         setSyncedAt(new Date());
       }
       setNotice(parsed.sales.length && !newSales.length ? "The sales report was skipped: only admins can add sales data." : "");
       const nextSales = Array.from(salesMap.values());
       const nextInquiries = Array.from(inquiryMap.values());
-      const mergedSheets = new Map(sheets.map((item) => [`${item.file}|${item.sheet}`, item]));
-      newSheets.forEach((item) => mergedSheets.set(`${item.file}|${item.sheet}`, item));
+      const mergedSheets = new Map(sheets.map((item) => [sheetKey(item), item]));
+      newSheets.forEach((item) => mergedSheets.set(sheetKey(item), item));
       const nextSheets = Array.from(mergedSheets.values());
       setSales(nextSales);
       setInquiries(nextInquiries);
@@ -278,6 +285,38 @@ export default function Home() {
       void latestProcess.current(files);
     });
   }, []);
+
+  // Removes uploaded sales report files; rows another file also contains stay.
+  const removeSalesFiles = async (targets: SheetSummary[]) => {
+    const owners = new Set(targets.map((s) => s.id || LEGACY_UPLOAD));
+    const keep: SalesRow[] = [], changed: SalesRow[] = [], dropped: string[] = [];
+    for (const row of sales) {
+      const mine = row.uploads ?? [LEGACY_UPLOAD];
+      const left = mine.filter((owner) => !owners.has(owner));
+      if (!left.length) dropped.push(row.rowKey);
+      else if (left.length < mine.length) { const next = { ...row, uploads: left }; changed.push(next); keep.push(next); }
+      else keep.push(row);
+    }
+    const removed = new Set(targets.map(sheetKey));
+    const nextSheets = sheets.filter((s) => !removed.has(sheetKey(s)));
+    setBusy(true);
+    try {
+      if (cloud) {
+        const sb = getCloud()!;
+        await saveSales(sb, changed);
+        await deleteSales(sb, dropped);
+        await deleteSheets(sb, Array.from(removed));
+        setSyncedAt(new Date());
+      }
+      setSales(keep); setSheets(nextSheets); setError("");
+      setNotice(`Removed ${targets.map((s) => s.file).join(", ")}: ${count(dropped.length)} sales rows deleted${changed.length ? `, ${count(changed.length)} kept because another file has them` : ""}.`);
+      void persist({ sales: keep, inquiries, sheets: nextSheets });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const reset = () => { void clearWorkspace(); setSavedAt(null); setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
 
@@ -406,9 +445,10 @@ export default function Home() {
             {remember && <span className="storage-hint">Only this device keeps it. Seeing the same data on every phone and computer needs accounts.</span>}
           </div>
         )}
-        {sheets.length > 0 && (
+        {/* Sales report files are listed, added and removed on the Sales Dashboard tab. */}
+        {sheets.some((sheet) => sheet.kind !== "sales") && (
           <div className="loaded no-print" aria-label="Loaded sheets">
-            {sheets.map((sheet) => <span key={`${sheet.file}|${sheet.sheet}`} className="chip"><CheckCircle2 size={14} /><span>{sheet.file} › {sheet.sheet}</span><small>{sheet.kind === "sales" ? "sales report" : "scheduling tracker"} · {count(sheet.rows)} rows</small></span>)}
+            {sheets.filter((sheet) => sheet.kind !== "sales").map((sheet) => <span key={sheetKey(sheet)} className="chip"><CheckCircle2 size={14} /><span>{sheet.file} › {sheet.sheet}</span><small>{sheet.kind === "sales" ? "sales report" : "scheduling tracker"} · {count(sheet.rows)} rows</small></span>)}
           </div>
         )}
 
@@ -449,6 +489,8 @@ export default function Home() {
                 <div className="filters-note">{hasTypes ? `Patient type: ${typeInfo.short}` : "All patient types"}{hasPaid ? ` · Status: ${filters.status === "paid" ? "PAID" : "All"}` : ""}</div>
               </div>
             </header>
+
+            {role === "admin" && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />}
 
             <div className="filterbar no-print">
               {hasTypes && (
@@ -493,7 +535,9 @@ export default function Home() {
         )}
 
         {tab === "summary" && sales.length === 0 && funnel && (
-          <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />Upload the Detailed Sales Report</h3><p className="empty-note">Only the scheduling tracker is loaded. Add the sales report with <strong>Add files</strong> to see revenue, patient types, sources and physicians here, or open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>
+          role === "admin"
+            ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />
+            : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report yet</h3><p className="empty-note">The CEO / Doctor account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>
         )}
       </div>
       <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Scheduling tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />

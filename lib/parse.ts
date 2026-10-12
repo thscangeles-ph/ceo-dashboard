@@ -17,6 +17,8 @@ export type SalesRow = {
   discount: number;
   revenue: number; // Total Payment
   rowKey: string;
+  /** Upload ids (SheetSummary.id) of every file containing this row; missing on rows loaded before files were tracked. */
+  uploads?: string[];
 };
 
 /** One inquiry from the Central Concierge / scheduling tracker (the CRM sheet staff fill in). */
@@ -56,7 +58,11 @@ export type InquiryRow = {
   rowKey: string;
 };
 
-export type SheetSummary = { file: string; sheet: string; kind: "sales" | "concierge"; rows: number; columns: string[] };
+/** One loaded sheet. Sales sheets get an `id` per upload, so each uploaded file can be removed again. */
+export type SheetSummary = { file: string; sheet: string; kind: "sales" | "concierge"; rows: number; columns: string[]; id?: string; uploadedAt?: Date };
+/** Stands for the sales files uploaded before uploads were tracked; their rows can only be removed together. */
+export const LEGACY_UPLOAD = "before-file-tracking";
+export const sheetKey = (s: SheetSummary) => s.id || `${s.file}|${s.sheet}`;
 export type ParseResult = { sales: SalesRow[]; inquiries: InquiryRow[]; sheets: SheetSummary[]; problems: string[] };
 
 export const clean = (value: unknown) => String(value ?? "").replace(/\s+/g, " ").trim();
@@ -325,8 +331,11 @@ export async function parseWorkbooks(files: File[]): Promise<ParseResult> {
       if (sales && (!concierge || sales.index <= concierge.index)) {
         const rows = parseSales(grid, sales, file.name, sheetName);
         const columns = Object.entries(sales.map).filter(([, i]) => i >= 0).map(([field]) => field);
+        // Monthly exports often share a file name, so every upload gets its own id.
+        const id = `${file.name}|${sheetName}|${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        rows.forEach((row) => { row.uploads = [id]; });
         result.sales.push(...rows);
-        result.sheets.push({ file: file.name, sheet: sheetName, kind: "sales", rows: rows.length, columns });
+        result.sheets.push({ id, uploadedAt: new Date(), file: file.name, sheet: sheetName, kind: "sales", rows: rows.length, columns });
         matched += 1;
       } else if (concierge) {
         const rows = parseConcierge(grid, concierge);

@@ -135,6 +135,7 @@ Spelling variants such as `WALK IN`, `SEND IN` or `Home Service` are recognized.
 - Default filters: all patient types and Status = PAID (when a Status column exists). Both can be changed, along with a date range.
 - Discounts on SENIOR / PWD rows are reported as statutory; any other discount is reported as discretionary.
 - Uploading more files adds to what is loaded. Identical rows are counted once. **Start over** clears everything.
+- **Sales report files** (on the Sales Dashboard tab, CEO / Doctor only) lists every uploaded sales report with its rows and dates. **Add sales report** uploads another one; **Remove** takes a file back out, deleting only the rows no other uploaded file contains. Files uploaded before this list existed are not tracked one by one, so they can only be removed together.
 
 ## Run locally
 

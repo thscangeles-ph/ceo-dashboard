@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@supabase/supabase-js";
 import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
+import { sheetKey } from "./parse";
 
 /**
  * Shared cloud storage and logins (Supabase). Turned on by setting NEXT_PUBLIC_SUPABASE_URL and
@@ -106,7 +107,17 @@ async function upsert(sb: SupabaseClient, table: string, input: { key: string; d
 
 export const saveInquiries = (sb: SupabaseClient, rows: InquiryRow[]) => upsert(sb, "inquiries", rows.map((r) => ({ key: r.rowKey, data: r })));
 export const saveSales = (sb: SupabaseClient, rows: SalesRow[]) => upsert(sb, "sales_rows", rows.map((r) => ({ key: r.rowKey, data: r })));
-export const saveSheets = (sb: SupabaseClient, rows: SheetSummary[]) => upsert(sb, "sheets", rows.map((s) => ({ key: `${s.file}|${s.sheet}`, kind: s.kind, data: s })));
+export const saveSheets = (sb: SupabaseClient, rows: SheetSummary[]) => upsert(sb, "sheets", rows.map((s) => ({ key: sheetKey(s), kind: s.kind, data: s })));
+
+async function removeKeys(sb: SupabaseClient, table: string, keys: string[]) {
+  // Keys travel in the URL, so delete in small batches.
+  for (let i = 0; i < keys.length; i += 100) {
+    const { error } = await sb.from(table).delete().in("key", keys.slice(i, i + 100));
+    if (error) throw new Error(friendly(error.message));
+  }
+}
+export const deleteSales = (sb: SupabaseClient, keys: string[]) => removeKeys(sb, "sales_rows", keys);
+export const deleteSheets = (sb: SupabaseClient, keys: string[]) => removeKeys(sb, "sheets", keys);
 
 export type NewMember = { email: string; fullName: string; role: Role; method: "invite" | "password"; password?: string };
 /** Creates a login through the app's server (app/api/team), which holds the Supabase admin key. */
