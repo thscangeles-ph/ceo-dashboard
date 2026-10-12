@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
 import type { NewMember, Profile, Role } from "@/lib/cloud";
-import { createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setProfileRole } from "@/lib/cloud";
+import { createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -26,12 +26,20 @@ export function LoadingScreen({ label = "Loading…" }: { label?: string }) {
   return <Shell><p className="empty-note" role="status">{label}</p></Shell>;
 }
 
-export function LoginScreen() {
+/** Plain-language text for a broken invite or reset link (Supabase sends error_code in the URL). */
+export function linkErrorText(code: string, description = "") {
+  if (/otp_expired|expired|invalid/i.test(`${code} ${description}`)) {
+    return "This link has expired or was already used. Email apps sometimes open links automatically to scan them, which uses them up. Enter your email below to get a new link, or ask the CEO / Doctor to set a password for you in Team.";
+  }
+  return `That link didn't work (${description || code}). Enter your email below to get a new one.`;
+}
+
+export function LoginScreen({ linkError }: { linkError?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "forgot">(linkError ? "forgot" : "login");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(linkError ? { tone: "error", text: linkError } : null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -61,6 +69,28 @@ export function LoginScreen() {
         <button type="button" className="link-btn" onClick={() => { setMode(mode === "login" ? "forgot" : "login"); setMessage(null); }}>{mode === "login" ? "Forgot your password?" : "Back to sign in"}</button>
       </form>
       <p className="privacy"><ShieldCheck size={17} /><span>Patient information is only shown to signed-in clinic staff. Sign out on shared computers.</span></p>
+    </Shell>
+  );
+}
+
+/** Landing page for invite and reset emails: the one-time code is only used when the person clicks Continue. */
+export function VerifyLinkScreen({ tokenHash, type, onVerified, onFailed }: {
+  tokenHash: string; type: "invite" | "recovery"; onVerified: (email: string, type: "invite" | "recovery") => void; onFailed: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    const { data, error } = await getCloud()!.auth.verifyOtp({ token_hash: tokenHash, type });
+    setBusy(false);
+    if (error || !data.user) onFailed(linkErrorText(error?.code || "otp_expired", error?.message));
+    else onVerified(data.user.email || "", type);
+  };
+  return (
+    <Shell>
+      <span className="tag">{type === "invite" ? "Welcome" : "Password reset"}</span>
+      <h1>{type === "invite" ? "You're invited" : "Set a new password"}</h1>
+      <p className="sub">{type === "invite" ? "You've been given an account on the THSC Summary Dashboard. Continue to choose your password." : "Continue to choose a new password for your account."}</p>
+      <div className="auth-form"><button type="button" className="btn btn-primary" disabled={busy} onClick={() => void go()}><KeyRound size={16} />{busy ? "Checking the link…" : "Continue"}</button></div>
     </Shell>
   );
 }
@@ -122,6 +152,19 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
   const [form, setForm] = useState<NewMember>({ email: "", fullName: "", role: "concierge", method: "invite", password: "" });
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState("");
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [newPw, setNewPw] = useState("");
+  const [pwDone, setPwDone] = useState("");
+
+  const savePassword = async (person: Profile) => {
+    setSaving(person.id); setError(""); setPwDone("");
+    try {
+      await setMemberPassword(getCloud()!, person.id, newPw);
+      setPwDone(`${person.email} can now sign in with the password you set. Give it to them privately; they can change it with Forgot your password?`);
+      setPwFor(null); setNewPw("");
+    } catch (e) { setError((e as Error).message); }
+    setSaving("");
+  };
 
   const reload = () => listProfiles(getCloud()!).then(setPeople).catch((e: Error) => setError(e.message));
   useEffect(() => {
@@ -193,12 +236,13 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
           </form>
 
           {error && <div className="alert" role="alert"><div>{error}</div></div>}
+          {pwDone && <div className="notice" role="status"><div>{pwDone}</div></div>}
           <h4>Everyone with a login</h4>
           {!people ? <p className="empty-note">Loading…</p> : (
             <div className="table-scroll">
               <table>
                 <tbody>
-                  <tr><th>Person</th><th>Access</th></tr>
+                  <tr><th>Person</th><th>Access</th><th></th></tr>
                   {people.map((p) => (
                     <tr key={p.id}>
                       <td className="name">{p.full_name || p.email}{p.full_name && <small className="muted"><br />{p.email}</small>}{p.id === me && <small className="muted"> (you)</small>}</td>
@@ -206,14 +250,22 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
                         <select className="role-select" value={p.role || "none"} disabled={saving === p.id} onChange={(e) => void change(p, e.target.value)}>
                           {ACCESS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
+                        {pwFor === p.id && (
+                          <form className="pw-row" onSubmit={(e) => { e.preventDefault(); void savePassword(p); }}>
+                            <input type="text" minLength={8} required autoFocus placeholder="New password (8+ characters)" value={newPw} autoComplete="off" onChange={(e) => setNewPw(e.target.value)} />
+                            <button type="submit" className="btn btn-primary btn-sm" disabled={saving === p.id}>Save</button>
+                            <button type="button" className="btn btn-outline btn-sm" onClick={() => { setPwFor(null); setNewPw(""); }}>Cancel</button>
+                          </form>
+                        )}
                       </td>
+                      <td>{pwFor !== p.id && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setPwFor(p.id); setNewPw(""); setPwDone(""); }}><KeyRound size={13} />Set password</button>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="drill-meta" style={{ marginTop: 12 }}>To remove someone, set them to <em>No access</em>. To delete a login completely, use Supabase → Authentication → Users.</p>
+          <p className="drill-meta" style={{ marginTop: 12 }}>If an invite link expired or someone is locked out, use <strong>Set password</strong> and give them the new password privately. To remove someone, set them to <em>No access</em>. To delete a login completely, use Supabase → Authentication → Users.</p>
         </div>
       </aside>
     </div>

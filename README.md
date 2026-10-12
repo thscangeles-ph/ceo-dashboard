@@ -43,21 +43,26 @@ The database enforces this (Row Level Security and de-identified views), not onl
 1. **Supabase → SQL Editor → New query:** paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. Run it again whenever this file changes; it is safe to re-run.
 2. **Authentication → Sign In / Providers:** turn off **Allow new users to sign up**.
 3. **Authentication → URL Configuration:** set **Site URL** to the app's Vercel address and add it under **Redirect URLs** (invite and password-reset emails link there).
-4. **Find the keys:**
+4. **Email templates** (so email apps that pre-open links to scan them can't use them up): in **Authentication → Emails → Templates**, replace the link in two templates:
+   - **Invite user:** `<a href="{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=invite">Accept the invite and set your password</a>`
+   - **Reset password:** `<a href="{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=recovery">Set a new password</a>`
+
+   The link then opens a page with a **Continue** button, and the one-time code is only used when the person clicks it.
+5. **Find the keys:**
    - **Project URL:** Project Settings → **Data API** (also shown under the **Connect** button at the top of the dashboard).
    - **Public key:** Project Settings → **API Keys** → the **Publishable** key (`sb_publishable_…`), or under **Legacy API Keys** the **anon** key.
    - **Server key** (only for creating accounts in the app): same page → **Secret** key (`sb_secret_…`), or the legacy **service_role** key.
-5. **Vercel → your project → Settings → Environment Variables:** add, for Production and Preview:
+6. **Vercel → your project → Settings → Environment Variables:** add, for Production and Preview:
    - `NEXT_PUBLIC_SUPABASE_URL` = Project URL
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` = publishable / anon key
    - `SUPABASE_SERVICE_ROLE_KEY` = secret / service_role key. Server-only: never add a `NEXT_PUBLIC_` prefix to it and never share it.
 
    Then **Deployments → ⋯ on the latest → Redeploy**. Variables only apply to new deployments.
-6. **Create your own login:** Authentication → Users → **Add user → Create new user**, with **Auto confirm user** ticked.
-7. **Make it CEO / Doctor:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
-8. Sign in to the app. If the device still has data from before, click **Move to shared**.
+7. **Create your own login:** Authentication → Users → **Add user → Create new user**, with **Auto confirm user** ticked.
+8. **Make it CEO / Doctor:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
+9. Sign in to the app. If the device still has data from before, click **Move to shared**.
 
-**Adding people:** open **Team → Add person**, enter name and email, pick **CEO / Doctor**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
+**Adding people:** open **Team → Add person**, enter name and email, pick **CEO / Doctor**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. If an invite link expired or someone is locked out, click **Set password** next to them and give them the new password privately; they can change it later with **Forgot your password?**. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
 
 Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets which account with the clinic's Data Protection Officer, and sign out on shared computers.
 

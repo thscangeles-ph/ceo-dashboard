@@ -244,6 +244,8 @@ section > .grid-2 + .panel, section > .grid-even + .panel, section > .panel + .g
 .role-cards input { position: absolute; opacity: 0; pointer-events: none; }
 .role-cards strong { color: var(--ink); font-size: .86rem; }
 .role-cards span { font-size: .74rem; color: var(--ink-soft); line-height: 1.4; }
+.pw-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pw-row input { flex: 1 1 180px; min-height: 32px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 0 8px; font-size: .84rem; }
 .steps { margin: 0; padding-left: 20px; font-size: .86rem; line-height: 1.7; color: var(--ink-soft); }
 
 /* KPIs */

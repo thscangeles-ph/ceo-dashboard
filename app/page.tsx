@@ -10,7 +10,7 @@ import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { ROLE_LABEL } from "@/lib/cloud";
 import { cloudConfigured, deleteInquiry as removeInquiry, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
-import { LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel } from "@/components/auth";
+import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
@@ -28,7 +28,8 @@ const EXCEL = /\.(xlsx|xlsm|xls)$/i;
 type AuthState =
   | { status: "local" } // no Supabase configured: data stays on this device
   | { status: "loading" }
-  | { status: "signedOut" }
+  | { status: "signedOut"; linkError?: string }
+  | { status: "verifyLink"; tokenHash: string; type: "invite" | "recovery" }
   | { status: "setPassword"; email: string }
   | { status: "noAccess"; email: string; error?: string }
   | { status: "signedIn"; userId: string; email: string; role: Role };
@@ -65,12 +66,22 @@ export default function Home() {
   useEffect(() => {
     if (!cloudConfigured) return;
     const sb = getCloud()!;
-    // Invite and password-reset emails land here with the link type in the URL.
+    // Invite and password-reset emails land here. Older email templates put the type in the URL hash;
+    // the recommended templates send ?token_hash=…&type=…, which is only used when the person clicks
+    // Continue, so email scanners that pre-open links can't use it up.
     linkType.current = /type=(invite|recovery)/.exec(window.location.hash)?.[1] || null;
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const tokenHash = query.get("token_hash"), tokenType = query.get("type");
+    const pending = tokenHash && (tokenType === "invite" || tokenType === "recovery") ? { tokenHash, type: tokenType as "invite" | "recovery" } : null;
+    const errorCode = hash.get("error_code") || query.get("error_code");
+    const linkError = errorCode ? linkErrorText(errorCode, hash.get("error_description") || query.get("error_description") || "") : "";
+    if (pending || errorCode) window.history.replaceState(null, "", window.location.pathname);
     let live = true;
     const handle = async (session: Session | null, recovery: boolean) => {
       if (!live) return;
-      if (!session) { setAuth({ status: "signedOut" }); return; }
+      if (pending && !linkType.current) { setAuth({ status: "verifyLink", ...pending }); return; }
+      if (!session) { setAuth({ status: "signedOut", linkError }); return; }
       const email = session.user.email || "";
       if (recovery || linkType.current) { setAuth({ status: "setPassword", email }); return; }
       try {
@@ -290,7 +301,12 @@ export default function Home() {
 
   // Sign-in gates when accounts are on.
   if (auth.status === "loading") return <LoadingScreen />;
-  if (auth.status === "signedOut") return <LoginScreen />;
+  if (auth.status === "signedOut") return <LoginScreen linkError={auth.linkError} />;
+  if (auth.status === "verifyLink") {
+    return <VerifyLinkScreen tokenHash={auth.tokenHash} type={auth.type}
+      onVerified={(email, type) => { linkType.current = type; setAuth({ status: "setPassword", email }); }}
+      onFailed={(message) => setAuth({ status: "signedOut", linkError: message })} />;
+  }
   if (auth.status === "setPassword") return <SetPasswordScreen email={auth.email} onDone={() => { linkType.current = null; window.location.replace(window.location.pathname); }} />;
   if (auth.status === "noAccess") return <NoAccessScreen email={auth.email} error={auth.error} onSignOut={() => void signOut()} />;
   const syncTime = (d: Date | null) => (d ? d.toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");

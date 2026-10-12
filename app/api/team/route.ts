@@ -13,21 +13,40 @@ type Body = { email?: string; fullName?: string; role?: Role; method?: "invite" 
 
 const reply = (status: number, body: object) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
-export async function POST(request: Request) {
+/** Returns an admin Supabase client when the caller is a signed-in CEO / Doctor, or the error reply. */
+async function asCeo(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!url || !serviceKey) {
-    return reply(501, { error: "Creating accounts from the app isn't switched on yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel and redeploy, or add the person in Supabase → Authentication → Users." });
+    return { error: reply(501, { error: "Managing logins from the app isn't switched on yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel and redeploy, or use Supabase → Authentication → Users." }) };
   }
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-
-  // Who is asking? Must be a signed-in CEO / Doctor.
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!token) return reply(401, { error: "Please sign in again." });
+  if (!token) return { error: reply(401, { error: "Please sign in again." }) };
   const { data: caller, error: callerError } = await admin.auth.getUser(token);
-  if (callerError || !caller.user) return reply(401, { error: "Please sign in again." });
+  if (callerError || !caller.user) return { error: reply(401, { error: "Please sign in again." }) };
   const { data: me } = await admin.from("profiles").select("role").eq("id", caller.user.id).maybeSingle();
-  if (me?.role !== "admin") return reply(403, { error: "Only a CEO / Doctor account can add people." });
+  if (me?.role !== "admin") return { error: reply(403, { error: "Only a CEO / Doctor account can manage logins." }) };
+  return { admin };
+}
+
+/** Sets a new (temporary) password for an existing login, e.g. when an invite link expired. */
+export async function PATCH(request: Request) {
+  const auth = await asCeo(request);
+  if (auth.error) return auth.error;
+  let body: { id?: string; password?: string };
+  try { body = await request.json(); } catch { return reply(400, { error: "Invalid request." }); }
+  if (!body.id || !/^[0-9a-f-]{36}$/i.test(body.id)) return reply(400, { error: "Choose a person." });
+  if ((body.password || "").length < 8) return reply(400, { error: "The password needs at least 8 characters." });
+  const { error } = await auth.admin.auth.admin.updateUserById(body.id, { password: body.password, email_confirm: true });
+  if (error) return reply(400, { error: error.message });
+  return reply(200, { id: body.id, ok: true });
+}
+
+export async function POST(request: Request) {
+  const auth = await asCeo(request);
+  if (auth.error) return auth.error;
+  const admin = auth.admin;
 
   let body: Body;
   try { body = (await request.json()) as Body; } catch { return reply(400, { error: "Invalid request." }); }

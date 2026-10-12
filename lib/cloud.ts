@@ -108,6 +108,19 @@ export async function createMember(sb: SupabaseClient, member: NewMember) {
   return result as { id: string; email: string; fullName: string; role: Role; invited: boolean };
 }
 
+/** CEO / Doctor sets a temporary password for someone (their invite expired, or they're locked out). */
+export async function setMemberPassword(sb: SupabaseClient, id: string, password: string) {
+  const { data } = await sb.auth.getSession();
+  const response = await fetch("/api/team", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", authorization: `Bearer ${data.session?.access_token || ""}` },
+    body: JSON.stringify({ id, password }),
+  }).catch(() => null);
+  if (!response) throw new Error(friendly("Failed to fetch"));
+  const result = (await response.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+  if (!response.ok || !result.ok) throw new Error(result.error || "Could not set the password.");
+}
+
 export async function deleteInquiry(sb: SupabaseClient, key: string) {
   const { error } = await sb.from("inquiries").delete().eq("key", key);
   if (error) throw new Error(friendly(error.message));
