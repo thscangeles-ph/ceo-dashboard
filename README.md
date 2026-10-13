@@ -13,6 +13,15 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **Inquiry Tracker tab**: the concierge inquiry tracker as a working sheet, with a Next Step box for every inquiry (see **Inquiry Tracker** below)
 - **CRM Dashboard tab** (built from the Inquiry Tracker), organised by the eight CRM functions: inquiry management (what patients ask, weekly trend, next step recorded), appointment management (bookings, no-shows, cancellations), follow-up reminders (a follow-up queue of overdue and upcoming call-backs, reminder coverage), patient retention (recall list, new vs. returning), referral management, marketing analysis (booking rate and revenue per channel or campaign), concierge monitoring (when inquiries arrive, branches, staff and response time) and business analytics (demand by procedure)
 
+**PDF reports.** Every tab has a **Download PDF** button that writes a report of exactly what the tab shows, for the period and filters chosen there:
+
+- **Sales Report:** the cards, patients by type, CEO briefing findings and suggested decisions, new patients by source, revenue by service line and patient category, top referring physicians and daily volume
+- **Patient Acquisition Cost Report:** the cards (with cost per new patient), patients by type, new patients by source and cost by source with the spend entered
+- **CRM Report:** the cards, inquiry outcomes, findings and the eight CRM areas, including the follow-up queue (not in Marketing accounts' reports)
+- **Inquiry Tracker report:** the inquiries in the current view (use From / To for a period), with each one's next step
+
+Reports that list patients are marked confidential in the footer of every page. The PDF is made in the browser; nothing is sent to a server.
+
 **Everything is clickable.** Click a KPI card, chart bar, bar segment, legend item, finding or table row to open a details panel with the records behind that number: patients, visits, revenue, breakdowns by patient type and service, and the billed line items, which can be downloaded as Excel. Patient names are not shown for sales data.
 
 **Patient Acquisition Cost tab** (formerly the separate THSC Patient Acquisition Dashboard), from the same uploaded sales reports:

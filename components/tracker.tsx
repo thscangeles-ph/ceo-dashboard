@@ -7,6 +7,8 @@ import { inquiryTopic } from "@/lib/crm";
 import { effectiveResponded } from "@/lib/lead";
 import type { InquiryRow, SheetSummary } from "@/lib/parse";
 import { TrackerFiles } from "@/components/tracker-files";
+import { PdfButton } from "@/components/pdf-button";
+import { trackerReport } from "@/lib/reports";
 import type { CellField, NextStep, StepTone } from "@/lib/tracker";
 import { applyEdit, cellValue, exportTracker, nextStep, PAYMENT_MODES, STEP_LABEL } from "@/lib/tracker";
 
@@ -70,6 +72,8 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
   const [search, setSearch] = useState(initialSearch);
   const [view, setView] = useState<View>(initialSearch ? "all" : "action");
   const [branch, setBranch] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [sort, setSort] = useState<"newest" | "oldest" | "due">("newest");
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<{ key: string; field: CellField } | null>(null);
@@ -89,13 +93,14 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
     };
   }, [rows]);
 
-  // Search and branch first, so each view chip shows how many rows it would show.
+  // Search, branch and dates first, so each view chip shows how many rows it would show.
   const base = useMemo(() => {
     const q = search.trim().toUpperCase(), digits = search.replace(/\D/g, "");
-    return rows.filter((r) => (branch === "all" || r.branch === branch) && (!q ||
+    const start = from ? new Date(`${from}T00:00:00`) : null, end = to ? new Date(`${to}T23:59:59`) : null;
+    return rows.filter((r) => (branch === "all" || r.branch === branch) && (!start || (r.date && r.date >= start)) && (!end || (r.date && r.date <= end)) && (!q ||
       [r.patient, r.procedure, r.inquired, r.channel, r.action, r.remarks].some((v) => v.toUpperCase().includes(q)) ||
       (digits.length >= 3 && r.contact.replace(/\D/g, "").includes(digits))));
-  }, [rows, search, branch]);
+  }, [rows, search, branch, from, to]);
   const counts = useMemo(() => Object.fromEntries(VIEWS.map((v) => [v.key, base.filter((r) => v.test(r, stepOf(r))).length])) as Record<View, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [base, steps]);
@@ -156,6 +161,11 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
           <div className="crm-actions no-print">
             <button type="button" className="btn btn-primary" onClick={onAdd}><Plus size={16} />Add inquiry</button>
             <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)} disabled={!rows.length}><Download size={16} />Export Excel</button>
+            {shown.length > 0 && <PdfButton make={() => trackerReport(shown.map((r) => ({ row: r, step: stepOf(r), n: numbers.get(r.rowKey) || 0 })), {
+              view: VIEWS.find((v) => v.key === view)!.label,
+              filters: [`Showing: ${VIEWS.find((v) => v.key === view)!.label} (${shown.length} of ${rows.length} inquiries)`, branch !== "all" ? `Branch: ${branch}` : "", from || to ? `Dates: ${from || "first"} to ${to || "last"}` : "Dates: all", search ? `Search: "${search}"` : ""].filter(Boolean).join(" · "),
+              counts: VIEWS.filter((v) => v.key !== "all").map((v) => ({ label: v.label, value: counts[v.key] })),
+            })} />}
           </div>
         </div>
         <div className="period">
@@ -169,6 +179,8 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
       <div className="filterbar trk-filters no-print">
         <label className="trk-search">Search<span><Search size={15} aria-hidden /><input type="search" value={search} placeholder="Name, number, procedure, question…" onChange={(e) => filterBy(() => setSearch(e.target.value))} /></span></label>
         <label>Branch<select value={branch} onChange={(e) => filterBy(() => setBranch(e.target.value))}><option value="all">All branches</option>{branches.map((b) => <option key={b}>{b}</option>)}</select></label>
+        <label>From<input type="date" value={from} onChange={(e) => filterBy(() => setFrom(e.target.value))} /></label>
+        <label>To<input type="date" value={to} onChange={(e) => filterBy(() => setTo(e.target.value))} /></label>
         <label>Sort<select value={sort} onChange={(e) => filterBy(() => setSort(e.target.value as typeof sort))}><option value="newest">Newest first</option><option value="oldest">Oldest first (as in Excel)</option><option value="due">Most urgent first</option></select></label>
       </div>
       <div className="chips trk-views no-print" role="group" aria-label="Show inquiries">

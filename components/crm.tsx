@@ -9,6 +9,8 @@ import type { CrmFilters, DueStatus, GroupStat } from "@/lib/crm";
 import { analyzeCrm, applyCrmFilters, crmFindings, DEFAULT_CRM_FILTERS, DUE_LABEL, inquiryTopic, stateOf } from "@/lib/crm";
 import { leadState } from "@/lib/lead";
 import type { InquiryRow } from "@/lib/parse";
+import { PdfButton } from "@/components/pdf-button";
+import { crmReport } from "@/lib/reports";
 
 const TONE_ICON = { risk: AlertTriangle, watch: Eye, ok: CheckCircle2 };
 const fmt = (d: Date | null | undefined) => (d ? longDate(d) : "—");
@@ -89,13 +91,15 @@ export function CrmDashboard({ rows, deidentified = false, onOpenTracker, onUplo
         <div>
           <h1>CRM Dashboard</h1>
           <p className="sub">Inquiries, bookings, follow-ups and referrals, built from the Inquiry Tracker</p>
-          {onOpenTracker && (
-            <div className="crm-actions no-print">
-              <button type="button" className="btn btn-outline" onClick={() => onOpenTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>
-              {onUploadTracker && <button type="button" className="btn btn-outline" onClick={onUploadTracker}><Upload size={16} />Upload tracker file</button>}
-              <span className="hint">Add and update inquiries there; this dashboard follows.</span>
-            </div>
-          )}
+          <div className="crm-actions no-print">
+            {t.inquiries > 0 && <PdfButton make={() => crmReport(c, {
+              findings, today, deidentified,
+              filters: [`Branch: ${filters.branch === "all" ? "all" : filters.branch}`, filters.patient !== "all" ? `Patients: ${filters.patient}` : "", `Channel: ${filters.channel === "all" ? "all" : filters.channel}`, `Dates: ${filters.from || filters.to ? `${filters.from || "first"} to ${filters.to || "last"}` : "all"}`].filter(Boolean).join(" · "),
+            })} />}
+            {onOpenTracker && <button type="button" className="btn btn-outline" onClick={() => onOpenTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>}
+            {onUploadTracker && <button type="button" className="btn btn-outline" onClick={onUploadTracker}><Upload size={16} />Upload tracker file</button>}
+            {onOpenTracker && <span className="hint">Add and update inquiries there; this dashboard follows.</span>}
+          </div>
         </div>
         <div className="period">
           Inquiries logged<br /><strong>{c.period ? `${longDate(c.period.from)} – ${longDate(c.period.to)}` : "—"}</strong>

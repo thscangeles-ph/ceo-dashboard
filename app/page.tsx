@@ -17,6 +17,8 @@ import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordS
 import { CrmDashboard } from "@/components/crm";
 import { InquiryTracker } from "@/components/tracker";
 import { SalesFiles } from "@/components/sales-files";
+import { PdfButton } from "@/components/pdf-button";
+import { salesReport } from "@/lib/reports";
 import { DrillPanel, DrillProvider } from "@/components/drill";
 import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueMix, Sources, StillOpen } from "@/components/dashboard";
 import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
@@ -496,6 +498,14 @@ export default function Home() {
               <div>
                 <h1>Sales Dashboard</h1>
                 <p className="sub">The Heart Specialists Clinic &amp; Diagnostic: revenue, patients and where they come from</p>
+                {summary && (
+                  <div className="crm-actions no-print">
+                    <PdfButton make={() => salesReport(summary, {
+                      period, findings, decisions, typeLabel: hasTypes ? `${typeInfo.short} patients` : "Patients",
+                      filters: [hasTypes ? `Patient type: ${typeInfo.label}` : "", hasPaid ? `Status: ${filters.status === "paid" ? "PAID only" : "all statuses"}` : "", `Dates: ${filters.from || filters.to ? `${filters.from || "first"} to ${filters.to || "last"}` : "all uploaded dates"}`, `Source: ${salesSheets.map((s) => s.file).filter((f, i, all) => all.indexOf(f) === i).join(", ")}`].filter(Boolean).join(" · "),
+                    })} />
+                  </div>
+                )}
               </div>
               <div className="period">
                 Reporting period<br /><strong>{period}</strong>

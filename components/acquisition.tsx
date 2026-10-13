@@ -8,6 +8,8 @@ import type { AcquisitionFilters, AcquisitionSpend } from "@/lib/acquisition";
 import { ACQ_TYPES, analyzeAcquisition, spendKey } from "@/lib/acquisition";
 import { count, isPaid, longDate, patientTypeInfo, peso } from "@/lib/analyze";
 import type { SalesRow } from "@/lib/parse";
+import { PdfButton } from "@/components/pdf-button";
+import { acquisitionReport } from "@/lib/reports";
 
 const exact = (v: number) => `₱${v.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const toInput = (d: Date | null | undefined) => (d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "");
@@ -71,6 +73,14 @@ export function AcquisitionDashboard({ rows, spends, canEdit, onSaveSpend, onAdd
         <div>
           <h1>Patient Acquisition Cost</h1>
           <p className="sub">What it costs to bring in each new patient: the uploaded sales reports and the marketing spend entered here</p>
+          {rows.length > 0 && (
+            <div className="crm-actions no-print">
+              <PdfButton make={() => acquisitionReport(a, spend, {
+                typeLabel, selectedNote: (selectedRow && breakdown(selectedRow.parts)) || type?.includes || "Across all patient types",
+                filters: [`Patient type: ${typeLabel}`, hasPaid ? `Status: ${filters.status === "paid" ? "PAID only" : "all statuses"}` : "", `Dates: ${rangeText}`].filter(Boolean).join(" · "),
+              })} />
+            </div>
+          )}
         </div>
         <div className="period">
           Reporting period<br /><strong>{a.period ? `${longDate(a.period.from)} – ${longDate(a.period.to)}` : rows.length ? "No rows in this range" : "No sales report yet"}</strong>
