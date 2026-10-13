@@ -35,11 +35,19 @@ export function getCloud() {
 }
 export const cloudConfigured = Boolean(URL && KEY);
 
-/** admin = CEO / Doctor (everything), concierge = Inquiry Tracker and CRM Dashboard, marketing = read-only analytics without patient details. */
-export type Role = "admin" | "concierge" | "marketing";
-export const ROLE_LABEL: Record<Role, string> = { admin: "CEO / Doctor", concierge: "Concierge", marketing: "Marketing" };
+/**
+ * admin = Admin, mancom = ManCom, doctor = Doctors: all three get everything. concierge = Inquiry Tracker
+ * and CRM Dashboard, marketing = read-only analytics without patient details. Listed in Team in this order.
+ */
+export type Role = "admin" | "mancom" | "doctor" | "concierge" | "marketing";
+export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", mancom: "ManCom", doctor: "Doctors", concierge: "Concierge", marketing: "Marketing" };
+/** Roles with full access: every tab, sales reports and Team. */
+export const FULL_ACCESS: Role[] = ["admin", "mancom", "doctor"];
+export const isFullAccess = (role: Role | null | undefined) => Boolean(role && FULL_ACCESS.includes(role));
 export const ROLE_DETAIL: Record<Role, string> = {
   admin: "Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker and Team",
+  mancom: "Everything, same as Admin",
+  doctor: "Everything, same as Admin",
   concierge: "Inquiry Tracker (add and update inquiries) and CRM Dashboard, with names and numbers",
   marketing: "Read-only Sales and CRM Dashboards, patient details hidden",
 };
@@ -134,7 +142,7 @@ export async function createMember(sb: SupabaseClient, member: NewMember) {
   return result as { id: string; email: string; fullName: string; role: Role; invited: boolean };
 }
 
-/** CEO / Doctor sets a temporary password for someone (their invite expired, or they're locked out). */
+/** An Admin, ManCom or Doctors account sets a temporary password for someone (their invite expired, or they're locked out). */
 export async function setMemberPassword(sb: SupabaseClient, id: string, password: string) {
   const { data } = await sb.auth.getSession();
   const response = await fetch("/api/team", {
@@ -157,7 +165,7 @@ export function friendly(message: string) {
   if (/invalid login credentials/i.test(message)) return "Wrong email or password.";
   if (/invalid api key|no api key|apikey/i.test(message)) return "Setup problem: the app's Supabase key is wrong (Invalid API key). In Vercel → Settings → Environment Variables, set NEXT_PUBLIC_SUPABASE_ANON_KEY to the Publishable (anon) key from the same Supabase project as NEXT_PUBLIC_SUPABASE_URL, then redeploy.";
   if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask the admin to confirm the user in Supabase.";
-  if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask the CEO / Doctor account to change your access in Team.";
+  if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask an Admin, ManCom or Doctors account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";
   if (/failed to fetch|network/i.test(message)) return "Can't reach the server. Check the internet connection and try again.";
   return message;

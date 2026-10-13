@@ -1,13 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Creates a login for a new team member. Only a signed-in CEO / Doctor (role 'admin') may call it.
+ * Creates a login for a new team member. Only a signed-in Admin, ManCom or Doctors account may call it.
  * Needs SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) in Vercel. That key never reaches the
  * browser: it is only read here on the server.
  */
 export const dynamic = "force-dynamic";
 
-const ROLES = ["admin", "concierge", "marketing"] as const;
+const ROLES = ["admin", "mancom", "doctor", "concierge", "marketing"] as const;
+/** Same full-access roles as lib/cloud.ts and public.full_access() in supabase/schema.sql. */
+const FULL_ACCESS: string[] = ["admin", "mancom", "doctor"];
 type Role = (typeof ROLES)[number];
 type Body = { email?: string; fullName?: string; role?: Role; method?: "invite" | "password"; password?: string };
 
@@ -15,7 +17,7 @@ const KEY_HELP = (problem: string) =>
   `Setup problem: SUPABASE_SERVICE_ROLE_KEY in Vercel ${problem}. Copy the Secret key (sb_secret_…) or the legacy service_role key from the same Supabase project (Project Settings → API Keys), paste it into that variable in Vercel, then redeploy. Until then you can add people in Supabase → Authentication → Users and set their access here.`;
 const reply = (status: number, body: object) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
-/** Returns an admin Supabase client when the caller is a signed-in CEO / Doctor, or the error reply. */
+/** Returns an admin Supabase client when the caller is a signed-in Admin, ManCom or Doctors account, or the error reply. */
 async function asCeo(request: Request) {
   const tidy = (value?: string) => value?.trim().replace(/^["']+|["']+$/g, "").trim() || undefined;
   const url = tidy(process.env.NEXT_PUBLIC_SUPABASE_URL)?.replace(/\/(rest|auth)\/v1\/?$/, "").replace(/\/+$/, "");
@@ -41,7 +43,7 @@ async function asCeo(request: Request) {
     return { error: reply(401, { error: "Your sign-in has expired. Sign out and sign in again." }) };
   }
   const { data: me } = await admin.from("profiles").select("role").eq("id", caller.user.id).maybeSingle();
-  if (me?.role !== "admin") return { error: reply(403, { error: "Only a CEO / Doctor account can manage logins." }) };
+  if (!FULL_ACCESS.includes(me?.role)) return { error: reply(403, { error: "Only an Admin, ManCom or Doctors account can manage logins." }) };
   return { admin };
 }
 

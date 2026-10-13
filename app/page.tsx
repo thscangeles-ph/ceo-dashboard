@@ -8,7 +8,7 @@ import type { Workspace } from "@/lib/store";
 import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember } from "@/lib/store";
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
-import { ROLE_LABEL } from "@/lib/cloud";
+import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
 import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deleteSales, deleteSheets, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
 import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
@@ -62,6 +62,7 @@ export default function Home() {
   const role: Role = auth.status === "signedIn" ? auth.role : "admin";
   const cloud = auth.status === "signedIn";
   const canEdit = role !== "marketing"; // Marketing accounts are read-only
+  const full = isFullAccess(role); // Admin, ManCom and Doctors: sales reports and Team
   const [team, setTeam] = useState(false);
   const [notice, setNotice] = useState("");
   const [deviceData, setDeviceData] = useState<Workspace | null>(null);
@@ -151,8 +152,8 @@ export default function Home() {
     try {
       const known = new Map(inquiries.map((r) => [r.rowKey, r]));
       await saveInquiries(sb, deviceData.inquiries.filter((r) => !known.has(r.rowKey) || r.editedAt));
-      if (role === "admin") await saveSales(sb, deviceData.sales);
-      await saveSheets(sb, deviceData.sheets.filter((s) => role === "admin" || s.kind === "concierge"));
+      if (full) await saveSales(sb, deviceData.sales);
+      await saveSheets(sb, deviceData.sheets.filter((s) => full || s.kind === "concierge"));
       await clearWorkspace(); setDeviceData(null);
       await refreshCloud();
     } catch (e) { setError((e as Error).message); }
@@ -220,10 +221,10 @@ export default function Home() {
     try {
       const parsed = await parseWorkbooks(excelFiles);
       if (!parsed.sales.length && !parsed.inquiries.length) throw new Error(parsed.problems.join(" ") || "No usable rows were found in the workbook.");
-      // Only admins may add sales reports once accounts are on; staff uploads keep the tracker only.
-      const newSales = role === "admin" ? parsed.sales : [];
-      const newSheets = parsed.sheets.filter((s) => role === "admin" || s.kind === "concierge");
-      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an admin. Your account can add the scheduling tracker.");
+      // Only full-access accounts may add sales reports once accounts are on; staff uploads keep the tracker only.
+      const newSales = full ? parsed.sales : [];
+      const newSheets = parsed.sheets.filter((s) => full || s.kind === "concierge");
+      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an Admin, ManCom or Doctors account. Your account can add the scheduling tracker.");
       // Adding files merges them with what is already loaded; identical rows are counted once.
       const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
       // A row already loaded from another file keeps that file as an owner too, so removing either file leaves it in place.
@@ -248,7 +249,7 @@ export default function Home() {
         await saveSheets(sb, newSheets);
         setSyncedAt(new Date());
       }
-      setNotice(parsed.sales.length && !newSales.length ? "The sales report was skipped: only admins can add sales data." : "");
+      setNotice(parsed.sales.length && !newSales.length ? "The sales report was skipped: only Admin, ManCom or Doctors accounts can add sales data." : "");
       const nextSales = Array.from(salesMap.values());
       const nextInquiries = Array.from(inquiryMap.values());
       const mergedSheets = new Map(sheets.map((item) => [sheetKey(item), item]));
@@ -273,7 +274,7 @@ export default function Home() {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [sales, inquiries, sheets, persist, role, cloud, canEdit]);
+  }, [sales, inquiries, sheets, persist, full, cloud, canEdit]);
 
   // Installed on a computer, the app can be chosen in "Open with" for Excel files.
   const latestProcess = useRef(processFiles);
@@ -384,7 +385,7 @@ export default function Home() {
             {canEdit && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
             {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
-            {cloud && role === "admin" && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
+            {cloud && full && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16} /><span className="hide-sm">Sign out</span></button>}
             {!cloud && hasData && <button type="button" className="btn btn-ghost" onClick={reset} aria-label="Start over"><RefreshCw size={16} /><span className="hide-sm">Start over</span></button>}
           </div>
@@ -398,7 +399,7 @@ export default function Home() {
         {notice && <div className="notice" role="status"><div>{notice}</div></div>}
         {cloud && deviceData && (
           <div className="notice device-move" role="status">
-            <div><strong>This device still has data saved before sign-in</strong> ({count(deviceData.inquiries.length)} inquiries{role === "admin" ? `, ${count(deviceData.sales.length)} sales rows` : ""}). Move it to the shared database so the whole team sees it?</div>
+            <div><strong>This device still has data saved before sign-in</strong> ({count(deviceData.inquiries.length)} inquiries{full ? `, ${count(deviceData.sales.length)} sales rows` : ""}). Move it to the shared database so the whole team sees it?</div>
             <div className="device-move-actions">
               <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void uploadDeviceData()}><Upload size={14} />Move to shared</button>
               <button type="button" className="btn btn-outline btn-sm" onClick={() => { void clearWorkspace(); setDeviceData(null); }}>Discard</button>
@@ -456,7 +457,7 @@ export default function Home() {
               </div>
             </header>
 
-            {role === "admin" && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />}
+            {full && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />}
 
             <div className="filterbar no-print">
               {hasTypes && (
@@ -509,9 +510,9 @@ export default function Home() {
               </div>
               <div className="period">Reporting period<br /><strong>No sales report yet</strong></div>
             </header>
-            {role === "admin"
+            {full
               ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />
-              : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report added yet</h3><p className="empty-note">The CEO / Doctor account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>}
+              : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report added yet</h3><p className="empty-note">An Admin, ManCom or Doctors account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>}
           </>
         )}
       </div>

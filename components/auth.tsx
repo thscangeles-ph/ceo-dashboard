@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
 import type { NewMember, Profile, Role } from "@/lib/cloud";
-import { configProblem, createMember, friendly, getCloud, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
+import { configProblem, createMember, friendly, getCloud, isFullAccess, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +29,7 @@ export function LoadingScreen({ label = "Loading…" }: { label?: string }) {
 /** Plain-language text for a broken invite or reset link (Supabase sends error_code in the URL). */
 export function linkErrorText(code: string, description = "") {
   if (/otp_expired|expired|invalid/i.test(`${code} ${description}`)) {
-    return "This link has expired or was already used. Email apps sometimes open links automatically to scan them, which uses them up. Enter your email below to get a new link, or ask the CEO / Doctor to set a password for you in Team.";
+    return "This link has expired or was already used. Email apps sometimes open links automatically to scan them, which uses them up. Enter your email below to get a new link, or ask an Admin, ManCom or Doctors account to set a password for you in Team.";
   }
   return `That link didn't work (${description || code}). Enter your email below to get a new one.`;
 }
@@ -153,12 +153,14 @@ function Copy({ text }: { text: string }) {
 
 const ACCESS_OPTIONS: { value: Role | "none"; label: string }[] = [
   { value: "admin", label: `${ROLE_LABEL.admin}: everything` },
+  { value: "mancom", label: `${ROLE_LABEL.mancom}: everything` },
+  { value: "doctor", label: `${ROLE_LABEL.doctor}: everything` },
   { value: "concierge", label: `${ROLE_LABEL.concierge}: Inquiry Tracker and CRM` },
   { value: "marketing", label: `${ROLE_LABEL.marketing}: read-only, no patient details` },
   { value: "none", label: "No access" },
 ];
 
-/** CEO / Doctor accounts add people and set what each account can do. */
+/** Admin, ManCom and Doctors accounts add people and set what each account can do. */
 export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) {
   const [people, setPeople] = useState<Profile[] | null>(null);
   const [error, setError] = useState("");
@@ -192,7 +194,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
 
   const change = async (person: Profile, value: string) => {
     const role = value === "none" ? null : (value as Role);
-    if (person.id === me && role !== "admin" && !window.confirm("This removes your own CEO / Doctor access. Continue?")) return;
+    if (person.id === me && !isFullAccess(role) && !window.confirm("This removes your own full access (Team, sales reports). Continue?")) return;
     setSaving(person.id); setError("");
     try {
       await setProfileRole(getCloud()!, person.id, role);

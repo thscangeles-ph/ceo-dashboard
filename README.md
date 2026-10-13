@@ -33,11 +33,13 @@ With Supabase connected, everyone signs in and the whole team shares one set of 
 
 | Account | Sees and does |
 | --- | --- |
-| **CEO / Doctor** | Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker, and **Team** to create accounts and change access |
+| **Admin** | Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker, and **Team** to create accounts and change access |
+| **ManCom** | Everything, same as Admin |
+| **Doctors** | Everything, same as Admin |
 | **Concierge** | Inquiry Tracker (add and update inquiries, export the Excel file) and CRM Dashboard, with patient names and numbers |
 | **Marketing** | Read-only Sales Dashboard and CRM Dashboard (no Inquiry Tracker). Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
 
-The database enforces this (Row Level Security and de-identified views), not only the screens.
+The database enforces this (Row Level Security and de-identified views), not only the screens. In the database the roles are stored as `admin`, `mancom`, `doctor`, `concierge` and `marketing`; accounts created as "CEO / Doctor" before these roles existed are `admin` and show as **Admin**.
 
 **One-time setup**
 
@@ -60,10 +62,10 @@ The database enforces this (Row Level Security and de-identified views), not onl
 
    Then **Deployments → ⋯ on the latest → Redeploy**. Variables only apply to new deployments.
 7. **Create your own login:** Authentication → Users → **Add user → Create new user**, with **Auto confirm user** ticked.
-8. **Make it CEO / Doctor:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
+8. **Make it Admin:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
 9. Sign in to the app. If the device still has data from before, click **Move to shared**.
 
-**Adding people:** open **Team → Add person**, enter name and email, pick **CEO / Doctor**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. If an invite link expired or someone is locked out, click **Set password** next to them and give them the new password privately; they can change it later with **Forgot your password?**. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
+**Adding people:** open **Team → Add person**, enter name and email, pick **Admin**, **ManCom**, **Doctors**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. If an invite link expired or someone is locked out, click **Set password** next to them and give them the new password privately; they can change it later with **Forgot your password?**. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
 
 Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets which account with the clinic's Data Protection Officer, and sign out on shared computers.
 
@@ -135,7 +137,7 @@ Spelling variants such as `WALK IN`, `SEND IN` or `Home Service` are recognized.
 - Default filters: all patient types and Status = PAID (when a Status column exists). Both can be changed, along with a date range.
 - Discounts on SENIOR / PWD rows are reported as statutory; any other discount is reported as discretionary.
 - Uploading more files adds to what is loaded. Identical rows are counted once. **Start over** clears everything.
-- **Sales report files** (on the Sales Dashboard tab, CEO / Doctor only) lists every uploaded sales report with its rows and dates. **Add sales report** uploads another one; **Remove** takes a file back out, deleting only the rows no other uploaded file contains. Files uploaded before this list existed are not tracked one by one, so they can only be removed together.
+- **Sales report files** (on the Sales Dashboard tab; Admin, ManCom and Doctors only) lists every uploaded sales report with its rows and dates. **Add sales report** uploads another one; **Remove** takes a file back out, deleting only the rows no other uploaded file contains. Files uploaded before this list existed are not tracked one by one, so they can only be removed together.
 
 ## Run locally
 
