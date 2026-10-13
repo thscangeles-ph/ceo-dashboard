@@ -352,7 +352,7 @@ export function CrmDashboard({ rows, deidentified = false, onOpenTracker, onUplo
           {missing.length > 0 && (
             <section className="callout">
               <span className="tag">To complete the CRM</span>
-              <h2>Columns to add to the scheduling tracker</h2>
+              <h2>Columns to add to the concierge inquiry tracker</h2>
               <p>The tracker already covers inquiries, bookings, no-shows, follow-ups, reminders and revenue. Adding these columns fills in the rest of the doctor&apos;s list. The app picks them up automatically on the next upload:</p>
               <ul>{missing.map(([col, why]) => <li key={col}><strong>{col}</strong>: {why}</li>)}</ul>
             </section>

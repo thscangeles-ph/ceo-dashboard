@@ -223,18 +223,18 @@ export default function Home() {
       const parsed = await parseWorkbooks(excelFiles);
       const names = excelFiles.map((f) => f.name).join(", ");
       if (only === "concierge") {
-        if (!parsed.inquiries.length) throw new Error(`No scheduling tracker was found in ${names}. The tracker needs columns such as Channel / Source, Name and Inquired. To add a sales report, use Add sales report on the Sales Dashboard.`);
+        if (!parsed.inquiries.length) throw new Error(`No concierge inquiry tracker was found in ${names}. The tracker needs columns such as Channel / Source, Name and Inquired. To add a sales report, use Add sales report on the Sales Dashboard.`);
         parsed.sales = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "concierge");
       }
       if (only === "sales") {
-        if (!parsed.sales.length) throw new Error(`No sales report was found in ${names}. It needs the columns Date, Patient Name and Total Payment. To add the scheduling tracker, use Upload tracker file in the Inquiry Tracker.`);
+        if (!parsed.sales.length) throw new Error(`No sales report was found in ${names}. It needs the columns Date, Patient Name and Total Payment. To add the concierge inquiry tracker, use Upload tracker file in the Inquiry Tracker.`);
         parsed.inquiries = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "sales");
       }
       if (!parsed.sales.length && !parsed.inquiries.length) throw new Error(parsed.problems.join(" ") || "No usable rows were found in the workbook.");
       // Only full-access accounts may add sales reports once accounts are on; staff uploads keep the tracker only.
       const newSales = full ? parsed.sales : [];
       const newSheets = parsed.sheets.filter((s) => full || s.kind === "concierge");
-      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an Admin, ManCom or Doctors account. Your account can add the scheduling tracker.");
+      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an Admin, ManCom or Doctors account. Your account can add the concierge inquiry tracker.");
       // Adding files merges them with what is already loaded; identical rows are counted once.
       const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
       // A row already loaded from another file keeps that file as an owner too, so removing either file leaves it in place.
@@ -270,7 +270,7 @@ export default function Home() {
         setSyncedAt(new Date());
       }
       setNotice([
-        parsed.inquiries.length ? `Scheduling tracker: ${count(addedCount)} new ${addedCount === 1 ? "inquiry" : "inquiries"} added, ${count(updatedCount)} updated, ${count(unchangedCount)} already up to date${keptCount ? `, ${count(keptCount)} kept as edited in the app` : ""}.` : "",
+        parsed.inquiries.length ? `Inquiry tracker: ${count(addedCount)} new ${addedCount === 1 ? "inquiry" : "inquiries"} added, ${count(updatedCount)} updated, ${count(unchangedCount)} already up to date${keptCount ? `, ${count(keptCount)} kept as edited in the app` : ""}.` : "",
         parsed.sales.length && !newSales.length ? "The sales report was skipped: only Admin, ManCom or Doctors accounts can add sales data." : "",
       ].filter(Boolean).join(" "));
       const nextSales = Array.from(salesMap.values());
@@ -459,7 +459,7 @@ export default function Home() {
 
         {!restoring && tab === "crm" && (inquiries.length
           ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} onOpenTracker={canEdit ? openTracker : undefined} onUploadTracker={canEdit ? () => pickFiles("concierge") : undefined} />
-          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. {canEdit ? <>Upload the concierge scheduling tracker, or add inquiries in the Inquiry Tracker.</> : "The concierge team hasn't added any inquiries yet."} The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <div className="crm-actions"><button type="button" className="btn btn-primary" onClick={() => pickFiles("concierge")} disabled={busy}><Upload size={16} />Upload tracker file</button><button type="button" className="btn btn-outline" onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button></div>}</div>)}
+          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. {canEdit ? <>Upload the concierge inquiry tracker, or add inquiries in the Inquiry Tracker.</> : "The concierge team hasn't added any inquiries yet."} The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <div className="crm-actions"><button type="button" className="btn btn-primary" onClick={() => pickFiles("concierge")} disabled={busy}><Upload size={16} />Upload tracker file</button><button type="button" className="btn btn-outline" onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button></div>}</div>)}
 
         {!restoring && tab === "tracker" && canEdit && (
           <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
@@ -542,7 +542,7 @@ export default function Home() {
       {dragging && canEdit && (
         <div className="drop-overlay no-print" onDragLeave={() => setDragging(false)}><div><Upload size={28} />Drop Excel files to add them</div></div>
       )}
-      <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Scheduling tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
+      <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Concierge inquiry tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
       {team && auth.status === "signedIn" && <TeamPanel me={auth.userId} onClose={closeTeam} />}
       {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor} />}
     </main>

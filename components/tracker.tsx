@@ -152,7 +152,7 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
       <header className="top">
         <div>
           <h1>Inquiry Tracker</h1>
-          <p className="sub">Every patient inquiry in the scheduling tracker&apos;s columns. Click a cell to edit it like in Excel. The CRM Dashboard is built from this list.</p>
+          <p className="sub">Every patient inquiry in the concierge inquiry tracker&apos;s columns. Click a cell to edit it like in Excel. The CRM Dashboard is built from this list.</p>
           <div className="crm-actions no-print">
             <button type="button" className="btn btn-primary" onClick={onAdd}><Plus size={16} />Add inquiry</button>
             <button type="button" className="btn btn-outline" onClick={() => exportTracker(rows)} disabled={!rows.length}><Download size={16} />Export Excel</button>
@@ -229,7 +229,7 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
             </table>
           </div>
         ) : (
-          <p className="empty-note">{rows.length ? "No inquiries match. Try another view or clear the search." : "No inquiries yet. Click Add inquiry, or upload the scheduling tracker with Add files."}</p>
+          <p className="empty-note">{rows.length ? "No inquiries match. Try another view or clear the search." : "No inquiries yet. Click Add inquiry, or upload the concierge inquiry tracker with Add files."}</p>
         )}
         {shown.length > 0 && (
           <div className="trk-foot no-print">
