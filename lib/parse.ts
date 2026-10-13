@@ -341,7 +341,7 @@ export async function parseWorkbooks(files: File[]): Promise<ParseResult> {
         const rows = parseConcierge(grid, concierge);
         const columns = Object.entries(concierge.map).filter(([, i]) => i >= 0).map(([field]) => field);
         result.inquiries.push(...rows);
-        result.sheets.push({ file: file.name, sheet: sheetName, kind: "concierge", rows: rows.length, columns });
+        result.sheets.push({ uploadedAt: new Date(), file: file.name, sheet: sheetName, kind: "concierge", rows: rows.length, columns });
         matched += 1;
       }
     }

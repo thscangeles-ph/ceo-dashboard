@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -213,13 +213,23 @@ export default function Home() {
     void persist({ sales, inquiries, sheets }, keep);
   };
 
-  const processFiles = useCallback(async (incoming: File[]) => {
+  /** `only` comes from the Add sales report / Upload tracker file buttons: other kinds of sheets in the file are ignored. */
+  const processFiles = useCallback(async (incoming: File[], only?: "sales" | "concierge") => {
     if (!canEdit) { setError("Marketing accounts can view the dashboards but not add files."); return; }
     const excelFiles = incoming.filter((file) => EXCEL.test(file.name));
     if (!excelFiles.length) { setError("Please upload an Excel file in .xlsx or .xls format."); return; }
     setBusy(true);
     try {
       const parsed = await parseWorkbooks(excelFiles);
+      const names = excelFiles.map((f) => f.name).join(", ");
+      if (only === "concierge") {
+        if (!parsed.inquiries.length) throw new Error(`No scheduling tracker was found in ${names}. The tracker needs columns such as Channel / Source, Name and Inquired. To add a sales report, use Add sales report on the Sales Dashboard.`);
+        parsed.sales = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "concierge");
+      }
+      if (only === "sales") {
+        if (!parsed.sales.length) throw new Error(`No sales report was found in ${names}. It needs the columns Date, Patient Name and Total Payment. To add the scheduling tracker, use Upload tracker file in the Inquiry Tracker.`);
+        parsed.inquiries = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "sales");
+      }
       if (!parsed.sales.length && !parsed.inquiries.length) throw new Error(parsed.problems.join(" ") || "No usable rows were found in the workbook.");
       // Only full-access accounts may add sales reports once accounts are on; staff uploads keep the tracker only.
       const newSales = full ? parsed.sales : [];
@@ -241,6 +251,16 @@ export default function Home() {
       const incoming = parsed.inquiries.map((row) => (inquiryMap.has(row.rowKey) || !byContent.has(row.rowKey) ? row : { ...row, rowKey: byContent.get(row.rowKey)! }));
       // An inquiry updated in the app wins over an older copy of the same row in a re-uploaded sheet.
       const changedInquiries = incoming.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
+      const addedCount = new Set(changedInquiries.filter((row) => !inquiryMap.has(row.rowKey)).map((row) => row.rowKey)).size;
+      // Field order differs once rows come back from the database, so compare with sorted keys.
+      const same = (a?: InquiryRow, b?: InquiryRow) => {
+        if (!a || !b) return false;
+        const keys = Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort();
+        return JSON.stringify(a, keys) === JSON.stringify(b, keys);
+      };
+      const updatedCount = new Set(changedInquiries.filter((row) => inquiryMap.has(row.rowKey) && !same(inquiryMap.get(row.rowKey), row)).map((row) => row.rowKey)).size;
+      const unchangedCount = new Set(changedInquiries.filter((row) => same(inquiryMap.get(row.rowKey), row)).map((row) => row.rowKey)).size;
+      const keptCount = incoming.length - changedInquiries.length;
       changedInquiries.forEach((row) => inquiryMap.set(row.rowKey, row));
       if (cloud) {
         const sb = getCloud()!;
@@ -249,7 +269,10 @@ export default function Home() {
         await saveSheets(sb, newSheets);
         setSyncedAt(new Date());
       }
-      setNotice(parsed.sales.length && !newSales.length ? "The sales report was skipped: only Admin, ManCom or Doctors accounts can add sales data." : "");
+      setNotice([
+        parsed.inquiries.length ? `Scheduling tracker: ${count(addedCount)} new ${addedCount === 1 ? "inquiry" : "inquiries"} added, ${count(updatedCount)} updated, ${count(unchangedCount)} already up to date${keptCount ? `, ${count(keptCount)} kept as edited in the app` : ""}.` : "",
+        parsed.sales.length && !newSales.length ? "The sales report was skipped: only Admin, ManCom or Doctors accounts can add sales data." : "",
+      ].filter(Boolean).join(" "));
       const nextSales = Array.from(salesMap.values());
       const nextInquiries = Array.from(inquiryMap.values());
       const mergedSheets = new Map(sheets.map((item) => [sheetKey(item), item]));
@@ -265,8 +288,8 @@ export default function Home() {
         from: "", to: "",
       });
       setError(parsed.problems.join(" "));
-      // Land on the tab the new file belongs to.
-      if (parsed.inquiries.length && !parsed.sales.length) setTab((t) => (t === "tracker" ? t : "crm"));
+      // Land on the tab the new file belongs to (a button inside a tab keeps you there).
+      if (only) { /* stay */ } else if (parsed.inquiries.length && !parsed.sales.length) setTab((t) => (t === "tracker" ? t : "crm"));
       else if (parsed.sales.length && !parsed.inquiries.length) setTab("summary");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workbook could not be read.");
@@ -318,6 +341,10 @@ export default function Home() {
       setBusy(false);
     }
   };
+
+  // The Add sales report and Upload tracker file buttons share the file picker but accept only their own kind of file.
+  const uploadKind = useRef<"sales" | "concierge" | undefined>(undefined);
+  const pickFiles = (only?: "sales" | "concierge") => { uploadKind.current = only; inputRef.current?.click(); };
 
   const reset = () => { void clearWorkspace(); setSavedAt(null); setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
 
@@ -382,7 +409,7 @@ export default function Home() {
           </div>
           <div className="appbar-actions">
             <InstallAppButton />
-            {canEdit && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
+            {canEdit && <button type="button" className="btn btn-ghost" onClick={() => pickFiles()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
             {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
             {cloud && full && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
@@ -391,7 +418,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="sr-only" onChange={(e) => void processFiles(Array.from(e.target.files || []))} />
+      <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="sr-only" onChange={(e) => void processFiles(Array.from(e.target.files || []), uploadKind.current)} />
 
       <div className="wrap">
         {cloud && restoring && <p className="empty-note" role="status" style={{ marginTop: 20 }}>Loading shared data…</p>}
@@ -419,12 +446,7 @@ export default function Home() {
             {remember && <span className="storage-hint">Only this device keeps it. Seeing the same data on every phone and computer needs accounts.</span>}
           </div>
         )}
-        {/* Sales report files are listed, added and removed on the Sales Dashboard tab. */}
-        {sheets.some((sheet) => sheet.kind !== "sales") && (
-          <div className="loaded no-print" aria-label="Loaded sheets">
-            {sheets.filter((sheet) => sheet.kind !== "sales").map((sheet) => <span key={sheetKey(sheet)} className="chip"><CheckCircle2 size={14} /><span>{sheet.file} › {sheet.sheet}</span><small>{sheet.kind === "sales" ? "sales report" : "scheduling tracker"} · {count(sheet.rows)} rows</small></span>)}
-          </div>
-        )}
+        {/* Uploaded files are listed in their own tabs: sales reports on the Sales Dashboard, tracker files in the Inquiry Tracker. */}
 
         {/* The tabs are always there, with or without files; each tab says what is missing. */}
         {!restoring && (
@@ -436,11 +458,12 @@ export default function Home() {
         )}
 
         {!restoring && tab === "crm" && (inquiries.length
-          ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} onOpenTracker={canEdit ? openTracker : undefined} />
-          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. {canEdit ? <>Upload the concierge scheduling tracker with <strong>Add files</strong>, or add inquiries in the Inquiry Tracker.</> : "The concierge team hasn't added any inquiries yet."} The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>}</div>)}
+          ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} onOpenTracker={canEdit ? openTracker : undefined} onUploadTracker={canEdit ? () => pickFiles("concierge") : undefined} />
+          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. {canEdit ? <>Upload the concierge scheduling tracker, or add inquiries in the Inquiry Tracker.</> : "The concierge team hasn't added any inquiries yet."} The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <div className="crm-actions"><button type="button" className="btn btn-primary" onClick={() => pickFiles("concierge")} disabled={busy}><Upload size={16} />Upload tracker file</button><button type="button" className="btn btn-outline" onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button></div>}</div>)}
 
         {!restoring && tab === "tracker" && canEdit && (
           <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
+            sheets={sheets} busy={busy} onUpload={() => pickFiles("concierge")}
             onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
         )}
 
@@ -457,7 +480,7 @@ export default function Home() {
               </div>
             </header>
 
-            {full && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />}
+            {full && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets)} />}
 
             <div className="filterbar no-print">
               {hasTypes && (
@@ -511,7 +534,7 @@ export default function Home() {
               <div className="period">Reporting period<br /><strong>No sales report yet</strong></div>
             </header>
             {full
-              ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />
+              ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets)} />
               : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report added yet</h3><p className="empty-note">An Admin, ManCom or Doctors account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>}
           </>
         )}

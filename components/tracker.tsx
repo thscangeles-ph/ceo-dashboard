@@ -5,7 +5,8 @@ import { ChevronLeft, ChevronRight, Download, Plus, Search, SquarePen } from "lu
 import { count, longDate } from "@/lib/analyze";
 import { inquiryTopic } from "@/lib/crm";
 import { effectiveResponded } from "@/lib/lead";
-import type { InquiryRow } from "@/lib/parse";
+import type { InquiryRow, SheetSummary } from "@/lib/parse";
+import { TrackerFiles } from "@/components/tracker-files";
 import type { CellField, NextStep, StepTone } from "@/lib/tracker";
 import { applyEdit, cellValue, exportTracker, nextStep, PAYMENT_MODES, STEP_LABEL } from "@/lib/tracker";
 
@@ -55,8 +56,11 @@ const PAGE = 50;
  * columns, edited in place cell by cell, with a Next Step box that says what to do or Complete.
  * The CRM Dashboard is built from these rows.
  */
-export function InquiryTracker({ rows, onSave, onAdd, onOpen, initialSearch = "" }: {
+export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, onOpen, initialSearch = "" }: {
   rows: InquiryRow[];
+  sheets: SheetSummary[];
+  busy: boolean;
+  onUpload: () => void;
   onSave: (row: InquiryRow, base: InquiryRow) => void | Promise<void>;
   onAdd: () => void;
   onOpen: (row: InquiryRow) => void;
@@ -159,6 +163,8 @@ export function InquiryTracker({ rows, onSave, onAdd, onOpen, initialSearch = ""
           <div className="filters-note">Next steps as of {longDate(today)}</div>
         </div>
       </header>
+
+      <TrackerFiles sheets={sheets} busy={busy} onUpload={onUpload} />
 
       <div className="filterbar trk-filters no-print">
         <label className="trk-search">Search<span><Search size={15} aria-hidden /><input type="search" value={search} placeholder="Name, number, procedure, question…" onChange={(e) => filterBy(() => setSearch(e.target.value))} /></span></label>

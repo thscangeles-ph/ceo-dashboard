@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, ListChecks } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, ListChecks, Upload } from "lucide-react";
 import { CountChart, MixBar, RankedBars, TrendChart } from "@/components/charts";
 import { clickable, useDrill } from "@/components/drill";
 import { count, longDate, pct, peso, sourceGroup } from "@/lib/analyze";
@@ -52,7 +52,7 @@ const DUE_ORDER: DueStatus[] = ["overdue", "today", "upcoming", "unscheduled"];
  * Read-only analysis of the Inquiry Tracker: inquiries are added and updated there (`onOpenTracker`), never here.
  * `deidentified`: Marketing accounts get names replaced by codes and no contact numbers, so call lists are hidden.
  */
-export function CrmDashboard({ rows, deidentified = false, onOpenTracker }: { rows: InquiryRow[]; deidentified?: boolean; onOpenTracker?: (search?: string) => void }) {
+export function CrmDashboard({ rows, deidentified = false, onOpenTracker, onUploadTracker }: { rows: InquiryRow[]; deidentified?: boolean; onOpenTracker?: (search?: string) => void; onUploadTracker?: () => void }) {
   const drill = useDrill();
   const [filters, setFilters] = useState<CrmFilters>(DEFAULT_CRM_FILTERS);
   const [recallMonths, setRecallMonths] = useState(3);
@@ -92,6 +92,7 @@ export function CrmDashboard({ rows, deidentified = false, onOpenTracker }: { ro
           {onOpenTracker && (
             <div className="crm-actions no-print">
               <button type="button" className="btn btn-outline" onClick={() => onOpenTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>
+              {onUploadTracker && <button type="button" className="btn btn-outline" onClick={onUploadTracker}><Upload size={16} />Upload tracker file</button>}
               <span className="hint">Add and update inquiries there; this dashboard follows.</span>
             </div>
           )}
