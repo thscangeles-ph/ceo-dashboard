@@ -109,7 +109,7 @@ Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the heade
 
 **Scheduling tracker (CRM Dashboard)**: the concierge sheet staff fill in for every inquiry, as a separate file or another sheet. The app recognises its columns: `New or Returning Patient`, `Date`, `Time`, `Channel / Source`, `Name`, `Contact Number`, `Procedure / Test`, `Branch`, `Mode of Payment`, `Inquired`, `If not booked, schedule of follow-up`, `If booked, send a reminder`, `Booked (Date of Booking)`, `No Show`, `Served`, `Revenue (Cost of Procedure)` and `Other Applicable Actions (Follow-up)`. Optional columns unlock more of the CRM: `Responded (YES/NO)` (replies, unanswered price questions), `Staff` (staff performance), `Date Responded` (response time), `Referred By` (referral partners), `Campaign` (marketing) and `Appointment Date` (reminder timing, recalls). Simpler logs with `Channel` and `Status` (Booked, Served, No-show, No booking) still work.
 
-**Download template** on the start screen produces a workbook with both sheets and example rows.
+The app opens with all its tabs even before any file is added; each tab says what is missing. **Download template** (Sales Dashboard tab, before a sales report is added) produces a workbook with both sheets and example rows.
 
 ### Patient types
 

@@ -199,6 +199,9 @@ section > .grid-2 + .panel, section > .grid-even + .panel, section > .panel + .g
 .crm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .row-edit { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-sans-stack); font-size: .76rem; font-weight: 600; color: var(--gold); white-space: nowrap; }
 
+.drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--paper) 82%, transparent); border: 3px dashed var(--watch); }
+.drop-overlay div { display: grid; justify-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; color: var(--ink); pointer-events: none; }
+
 /* Sales report files on the Sales Dashboard */
 .files-panel { margin-bottom: 18px; }
 .files-panel h3 { display: flex; align-items: center; gap: 8px; }

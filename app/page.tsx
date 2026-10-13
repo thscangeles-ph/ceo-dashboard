@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, ListChecks, Cloud, Download, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Plus, Printer, RefreshCw, ShieldCheck, Smartphone, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, CheckCircle2, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -19,7 +19,7 @@ import { Briefing, DailyVolume, Funnel, Kpis, PatientTypes, Physicians, RevenueM
 import type { Drill, Filters, PatientTypeFilter, StatusFilter } from "@/lib/analyze";
 import { analyzeInquiries, analyzeSales, applyFilters, buildDecisions, buildFindings, count, isPaid, longDate, matchesType, PATIENT_TYPES, patientTypeInfo } from "@/lib/analyze";
 import type { InquiryRow, SalesRow, SheetSummary } from "@/lib/parse";
-import { downloadTemplate, inquiryKey, LEGACY_UPLOAD, parseWorkbooks, sheetKey } from "@/lib/parse";
+import { inquiryKey, LEGACY_UPLOAD, parseWorkbooks, sheetKey } from "@/lib/parse";
 
 type LaunchParams = { files: { getFile: () => Promise<File> }[] };
 declare global {
@@ -371,7 +371,7 @@ export default function Home() {
     <DrillProvider value={setDrill}>
     {/* Inquiries are added and updated in the Inquiry Tracker only; the dashboards are read-only views of it. */}
     <EditorProvider value={canEdit && tab === "tracker" ? openEditor : null}>
-    <main onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setDragging(false); void processFiles(Array.from(e.dataTransfer.files)); }}>
+    <main onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setDragging(false); if (!canEdit) return; void processFiles(Array.from(e.dataTransfer.files)); }}>
       <div className="appbar">
         <div className="appbar-inner">
           <div className="appbar-brand">
@@ -381,7 +381,7 @@ export default function Home() {
           </div>
           <div className="appbar-actions">
             <InstallAppButton />
-            {hasData && canEdit && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
+            {canEdit && <button type="button" className="btn btn-ghost" onClick={() => inputRef.current?.click()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
             {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
             {cloud && role === "admin" && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
@@ -393,33 +393,6 @@ export default function Home() {
       <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="sr-only" onChange={(e) => void processFiles(Array.from(e.target.files || []))} />
 
       <div className="wrap">
-        {!hasData && !restoring && !canEdit && (
-          <div className="panel empty-tab"><h3><ClipboardList size={16} />Nothing has been shared yet</h3><p className="empty-note">The dashboards appear here once the CEO / Doctor or concierge team uploads the sales report or the scheduling tracker. Use <strong>Refresh</strong> to check again.</p></div>
-        )}
-        {!hasData && !restoring && canEdit && (
-          <>
-            <div className={`dropzone${dragging ? " dragging" : ""}`} onDragLeave={() => setDragging(false)}>
-              <div className="drop-icon"><Upload size={26} /></div>
-              <div>
-                <h2>Upload the Excel report</h2>
-                <p>Use the Detailed Sales Report export. Add the Central Concierge log too (as another file or another sheet) to see the inquiry funnel. The summary dashboard is generated instantly.</p>
-                <div className="actions">
-                  <button type="button" className="btn btn-primary" onClick={() => inputRef.current?.click()} disabled={busy}><FileSpreadsheet size={17} />{busy ? "Reading…" : "Choose Excel files"}</button>
-                  <button type="button" className="btn btn-outline" onClick={() => openEditor()}><Plus size={16} />Log an inquiry</button>
-                  <button type="button" className="btn btn-outline" onClick={downloadTemplate}><Download size={16} />Download template</button>
-                  <span className="hint">.xlsx or .xls · or drag files here</span>
-                </div>
-              </div>
-            </div>
-            {cloud
-              ? <div className="privacy"><ShieldCheck size={17} /><span>Uploads and inquiries are saved to THSC&apos;s shared database, so everyone signed in sees the same data on any computer or phone. {role === "concierge" ? "Your account can add the scheduling tracker and inquiries; sales reports are added by the CEO / Doctor account." : ""}</span></div>
-              : <>
-                <div className="privacy"><ShieldCheck size={17} /><span>Workbooks are read on this device and never uploaded to a server. {remember ? "The latest data stays saved on this device, so it is still here after you refresh or close the app." : "Nothing is kept: data is cleared when you close the app."}</span></div>
-                <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep data on this device <small>(turn off on shared computers)</small></label>
-              </>}
-          </>
-        )}
-
         {cloud && restoring && <p className="empty-note" role="status" style={{ marginTop: 20 }}>Loading shared data…</p>}
         {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Something needs attention.</strong> {error}</div></div>}
         {notice && <div className="notice" role="status"><div>{notice}</div></div>}
@@ -438,9 +411,9 @@ export default function Home() {
             <span>Signed in as <strong>{auth.status === "signedIn" ? auth.email : ""}</strong> · {ROLE_LABEL[role]}{role === "marketing" ? " (read-only, patient details hidden)" : ""}</span>
           </div>
         )}
-        {!cloud && hasData && (
+        {!cloud && (
           <div className="storage-bar no-print">
-            <span><HardDrive size={15} aria-hidden />{remember ? (savedAt ? <>Saved on this device · {savedAt.toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</> : "Saving on this device…") : "Not saved: data is cleared when you close the app"}</span>
+            <span><HardDrive size={15} aria-hidden />{!hasData ? "Nothing added yet. Excel files are read on this device and never uploaded to a server." : remember ? (savedAt ? <>Saved on this device · {savedAt.toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</> : "Saving on this device…") : "Not saved: data is cleared when you close the app"}</span>
             <label className="remember"><input type="checkbox" checked={remember} onChange={(e) => toggleRemember(e.target.checked)} /> Keep on this device</label>
             {remember && <span className="storage-hint">Only this device keeps it. Seeing the same data on every phone and computer needs accounts.</span>}
           </div>
@@ -452,7 +425,8 @@ export default function Home() {
           </div>
         )}
 
-        {hasData && (
+        {/* The tabs are always there, with or without files; each tab says what is missing. */}
+        {!restoring && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
             {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} /><span>Sales<span className="hide-sm"> Dashboard</span>{!sales.length && <span className="hide-sm"> (no sales report)</span>}</span></button>}
             <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} /><span>CRM<span className="hide-sm"> Dashboard</span>{!inquiries.length && <span className="hide-sm"> (no tracker)</span>}</span></button>
@@ -460,21 +434,13 @@ export default function Home() {
           </nav>
         )}
 
-        {hasData && tab === "crm" && (inquiries.length
+        {!restoring && tab === "crm" && (inquiries.length
           ? <CrmDashboard rows={inquiries} deidentified={role === "marketing"} onOpenTracker={canEdit ? openTracker : undefined} />
-          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. Upload the concierge scheduling tracker with <strong>Add files</strong>, or add inquiries in the Inquiry Tracker. The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>}</div>)}
+          : <div className="panel empty-tab"><h3><ClipboardList size={16} />No inquiries yet</h3><p className="empty-note">The CRM Dashboard is built from the Inquiry Tracker. {canEdit ? <>Upload the concierge scheduling tracker with <strong>Add files</strong>, or add inquiries in the Inquiry Tracker.</> : "The concierge team hasn't added any inquiries yet."} The CRM then shows inquiries, bookings, no-shows, follow-ups, reminders, referrals and channel performance.</p>{canEdit && <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => openTracker()}><ListChecks size={16} />Open the Inquiry Tracker</button>}</div>)}
 
-        {hasData && tab === "tracker" && canEdit && (
+        {!restoring && tab === "tracker" && canEdit && (
           <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
             onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
-        )}
-
-        {!hasData && !restoring && (
-          <div className="welcome">
-            <div className="panel"><h3><FileSpreadsheet size={16} />Sales report columns</h3><p>Needs <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>. Also uses <code>Transaction No.</code>, <code>Patient Type</code>, <code>Status</code>, <code>Source</code>, <code>Referring Physician</code>, <code>Department</code>, <code>Test Examination</code>, <code>Patient Category</code>, <code>Gross Amount</code> and <code>Discount</code> when present.</p></div>
-            <div className="panel"><h3><ClipboardList size={16} />Scheduling tracker (CRM)</h3><p>The concierge sheet staff fill in: <code>New or Returning Patient</code>, <code>Date</code>, <code>Time</code>, <code>Channel / Source</code>, <code>Name</code>, <code>Contact Number</code>, <code>Procedure / Test</code>, <code>Branch</code>, <code>Inquired</code>, <code>Responded</code>, follow-up and reminder dates, <code>Booked</code>, <code>No Show</code>, <code>Served</code> and <code>Revenue</code>. It fills the Inquiry Tracker and the CRM Dashboard.</p></div>
-            <div className="panel"><h3><Smartphone size={16} />Use it as an app</h3><p>Tap <strong>Install app</strong> above (Chrome or Edge on PC and Android), or in Safari on iPhone tap <strong>Share → Add to Home Screen</strong>. It opens full screen and works offline.</p></div>
-          </div>
         )}
 
         {tab === "summary" && sales.length > 0 && (
@@ -534,12 +500,24 @@ export default function Home() {
           </>
         )}
 
-        {tab === "summary" && sales.length === 0 && funnel && (
-          role === "admin"
-            ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />
-            : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report yet</h3><p className="empty-note">The CEO / Doctor account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>
+        {!restoring && tab === "summary" && sales.length === 0 && (
+          <>
+            <header className="top">
+              <div>
+                <h1>Sales Dashboard</h1>
+                <p className="sub">The Heart Specialists Clinic &amp; Diagnostic: revenue, patients and where they come from</p>
+              </div>
+              <div className="period">Reporting period<br /><strong>No sales report yet</strong></div>
+            </header>
+            {role === "admin"
+              ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => inputRef.current?.click()} onRemove={(targets) => void removeSalesFiles(targets)} />
+              : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report added yet</h3><p className="empty-note">The CEO / Doctor account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>}
+          </>
         )}
       </div>
+      {dragging && canEdit && (
+        <div className="drop-overlay no-print" onDragLeave={() => setDragging(false)}><div><Upload size={28} />Drop Excel files to add them</div></div>
+      )}
       <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Scheduling tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
       {team && auth.status === "signedIn" && <TeamPanel me={auth.userId} onClose={closeTeam} />}
       {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor} />}

@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { FileSpreadsheet, Plus, Trash2 } from "lucide-react";
+import { Download, FileSpreadsheet, Plus, Trash2 } from "lucide-react";
 import { count, shortDate } from "@/lib/analyze";
 import type { SalesRow, SheetSummary } from "@/lib/parse";
-import { LEGACY_UPLOAD, sheetKey } from "@/lib/parse";
+import { downloadTemplate, LEGACY_UPLOAD, sheetKey } from "@/lib/parse";
 
 const added = (d?: Date) => (d ? d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "");
 
@@ -46,7 +46,7 @@ export function SalesFiles({ sheets, rows, busy, onAdd, onRemove }: {
   return (
     <section className="panel files-panel no-print" aria-label="Sales report files">
       <div className="queue-head">
-        <h3><FileSpreadsheet size={16} />{files.length ? "Sales report files" : "Upload your sales report"}</h3>
+        <h3><FileSpreadsheet size={16} />{files.length ? "Sales report files" : "No sales report added yet"}</h3>
         <button type="button" className="btn btn-primary btn-sm" onClick={onAdd} disabled={busy}><Plus size={14} />{busy ? "Working…" : "Add sales report"}</button>
       </div>
       {files.length ? (
@@ -67,7 +67,12 @@ export function SalesFiles({ sheets, rows, busy, onAdd, onRemove }: {
             );
           })}
         </ul>
-      ) : <p className="empty-note">Click <strong>Add sales report</strong> and choose the Detailed Sales Report export to see revenue, patient types, sources and physicians here.</p>}
+      ) : (
+        <>
+          <p className="empty-note">Click <strong>Add sales report</strong> and choose the Detailed Sales Report export (or drag it onto the page) to see revenue, patient types, sources and physicians here. It needs the columns <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>.</p>
+          <button type="button" className="btn btn-outline btn-sm" style={{ margin: "12px 0" }} onClick={downloadTemplate}><Download size={14} />Download template</button>
+        </>
+      )}
       <p className="drill-meta">Files add up: rows that appear in more than one file are counted once. Removing a file only deletes rows no other file has.</p>
     </section>
   );
