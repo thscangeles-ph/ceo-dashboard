@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, PhilippinePeso, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -9,7 +9,10 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember 
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deleteSales, deleteSheets, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deleteSales, deleteSheets, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { AcquisitionDashboard } from "@/components/acquisition";
+import type { AcquisitionSpend } from "@/lib/acquisition";
+import { spendKey } from "@/lib/acquisition";
 import { linkErrorText, LoadingScreen, LoginScreen, NoAccessScreen, SetPasswordScreen, TeamPanel, VerifyLinkScreen } from "@/components/auth";
 import { CrmDashboard } from "@/components/crm";
 import { InquiryTracker } from "@/components/tracker";
@@ -48,7 +51,9 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
-  const [tab, setTab] = useState<"summary" | "crm" | "tracker">("summary");
+  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker">("summary");
+  // Marketing spend for the Patient Acquisition Cost tab: shared in the cloud, or kept in this browser without accounts.
+  const [spends, setSpends] = useState<AcquisitionSpend[]>([]);
   // Opening the tracker from the CRM's follow-up queue searches for that patient.
   const [trackerFocus, setTrackerFocus] = useState({ search: "", n: 0 });
   const openTracker = useCallback((search = "") => { setTrackerFocus((f) => ({ search, n: f.n + 1 })); setTab("tracker"); window.scrollTo({ top: 0 }); }, []);
@@ -114,7 +119,7 @@ export default function Home() {
     setBusy(true);
     try {
       const data = await loadCloud(sb, myRole);
-      setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSyncedAt(new Date()); setError("");
+      setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSpends(data.spends); setSyncedAt(new Date()); setError("");
       setFilters((f) => ({ ...f, status: data.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
       // Concierge work in the Inquiry Tracker; without a sales report the CRM is the first thing to show.
       if (myRole === "concierge") setTab((t) => (t === "summary" ? "tracker" : t));
@@ -142,7 +147,7 @@ export default function Home() {
   const signOut = async () => {
     await getCloud()?.auth.signOut();
     // Shared data lives in the cloud and is not kept on the device; any older device-only data stays until an admin moves or discards it.
-    setSales([]); setInquiries([]); setSheets([]); setDeviceData(null); setTeam(false); setTab("summary");
+    setSales([]); setInquiries([]); setSheets([]); setSpends([]); setDeviceData(null); setTeam(false); setTab("summary");
   };
 
   const uploadDeviceData = async () => {
@@ -346,7 +351,19 @@ export default function Home() {
   const uploadKind = useRef<"sales" | "concierge" | undefined>(undefined);
   const pickFiles = (only?: "sales" | "concierge") => { uploadKind.current = only; inputRef.current?.click(); };
 
-  const reset = () => { void clearWorkspace(); setSavedAt(null); setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
+  const SPEND_STORE = "thsc-acquisition-spend";
+  useEffect(() => {
+    if (cloudConfigured) return;
+    try { const saved = JSON.parse(localStorage.getItem(SPEND_STORE) || "[]") as AcquisitionSpend[]; if (saved.length) setTimeout(() => setSpends(saved), 0); } catch { /* storage blocked: start empty */ }
+  }, []);
+  const saveAcquisitionSpend = async (spend: AcquisitionSpend) => {
+    if (cloud) await saveSpend(getCloud()!, spend); // throws → the tab shows the error
+    const next = [...spends.filter((s) => spendKey(s.from, s.to) !== spendKey(spend.from, spend.to)), spend];
+    setSpends(next);
+    if (!cloud) { try { localStorage.setItem(SPEND_STORE, JSON.stringify(next)); } catch { /* not kept */ } }
+  };
+
+  const reset = () => { try { localStorage.removeItem(SPEND_STORE); } catch { /* ignore */ } setSpends([]); void clearWorkspace(); setSavedAt(null); setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
 
   const hasTypes = sales.some((row) => row.patientType);
   // Unique patients per patient-type option, shown in the filter so empty types are obvious.
@@ -452,9 +469,15 @@ export default function Home() {
         {!restoring && (
           <nav className="tabs no-print" aria-label="Dashboard sections">
             {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} /><span>Sales<span className="hide-sm"> Dashboard</span>{!sales.length && <span className="hide-sm"> (no sales report)</span>}</span></button>}
+            {role !== "concierge" && <button type="button" className={tab === "acquisition" ? "on" : ""} aria-current={tab === "acquisition" ? "page" : undefined} onClick={() => setTab("acquisition")}><PhilippinePeso size={16} /><span><span className="hide-sm">Patient </span>Acquisition<span className="hide-sm"> Cost</span></span></button>}
             <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} /><span>CRM<span className="hide-sm"> Dashboard</span>{!inquiries.length && <span className="hide-sm"> (no tracker)</span>}</span></button>
             {canEdit && <button type="button" className={tab === "tracker" ? "on" : ""} aria-current={tab === "tracker" ? "page" : undefined} onClick={() => openTracker()}><ListChecks size={16} />Inquiry Tracker{inquiries.length > 0 && <small className="hide-sm">{count(inquiries.length)}</small>}</button>}
           </nav>
+        )}
+
+        {!restoring && tab === "acquisition" && role !== "concierge" && (
+          <AcquisitionDashboard key={sales.length ? "data" : "empty"} rows={sales} spends={spends} canEdit={full}
+            onSaveSpend={saveAcquisitionSpend} onAddSales={full ? () => pickFiles("sales") : undefined} />
         )}
 
         {!restoring && tab === "crm" && (inquiries.length
@@ -542,7 +565,7 @@ export default function Home() {
       {dragging && canEdit && (
         <div className="drop-overlay no-print" onDragLeave={() => setDragging(false)}><div><Upload size={28} />Drop Excel files to add them</div></div>
       )}
-      <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Concierge inquiry tracker" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
+      <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Concierge inquiry tracker" : tab === "acquisition" ? "Patient Acquisition Cost" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
       {team && auth.status === "signedIn" && <TeamPanel me={auth.userId} onClose={closeTeam} />}
       {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor} />}
     </main>

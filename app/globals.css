@@ -1,6 +1,7 @@
 :root {
   color-scheme: light;
-  --ink: #1b1915; --ink-soft: #6b6252; --paper: #f6f1e7; --panel: #fffdf8; --line: #e7dcc6;
+  /* --page is the white page; --paper is the light tint for chips, inputs and hover fills; --panel is a card. */
+  --page: #ffffff; --ink: #1b1915; --ink-soft: #6b6252; --paper: #f8f5ef; --panel: #ffffff; --line: #e6ded0;
   --bar: #161411; --bar-ink: #fffdf8; --bar-soft: #c9b48a; --brand: #f0c864; --primary: #1b1915; --primary-ink: #f0c864;
   /* Brand slots, always assigned in this order: black, gold, yellow, nude. "-text" is the label color on that fill. */
   --s1: #1b1915; --s1-text: #f6f1e7;
@@ -16,39 +17,12 @@
   --font-mono-stack: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --ink: #f3ead8; --ink-soft: #b4a78f; --paper: #12100d; --panel: #1c1915; --line: #342d24;
-    --bar: #0a0908; --bar-ink: #f3ead8; --bar-soft: #b4a78f; --brand: #f0c864; --primary: #f0c864; --primary-ink: #12100d;
-    --s1: #efe5d2; --s1-text: #12100d;
-    --s2: #b8860b; --s2-text: #12100d;
-    --s3: #f0c864; --s3-text: #12100d;
-    --s4: #9c7b58; --s4-text: #fffdf8;
-    --neutral: #4a4135; --neutral-text: #f3ead8;
-    --neutral-soft: #d8c3a5; --neutral-soft-text: #12100d;
-    --risk: #efe5d2; --ok: #9c7b58; --watch: #d9a521;
-    --callout: #261f12; --gold: #d9a521; --danger-bg: #241d12;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --ink: #f3ead8; --ink-soft: #b4a78f; --paper: #12100d; --panel: #1c1915; --line: #342d24;
-  --bar: #0a0908; --bar-ink: #f3ead8; --bar-soft: #b4a78f; --brand: #f0c864; --primary: #f0c864; --primary-ink: #12100d;
-  --s1: #efe5d2; --s1-text: #12100d;
-  --s2: #b8860b; --s2-text: #12100d;
-  --s3: #f0c864; --s3-text: #12100d;
-  --s4: #9c7b58; --s4-text: #fffdf8;
-  --neutral: #4a4135; --neutral-text: #f3ead8;
-  --neutral-soft: #d8c3a5; --neutral-soft-text: #12100d;
-  --risk: #efe5d2; --ok: #9c7b58; --watch: #d9a521;
-  --callout: #261f12; --gold: #d9a521; --danger-bg: #241d12;
-}
+/* Always the light look on a white page, whatever the device's dark-mode setting. */
 
 * { box-sizing: border-box; }
-html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+html { background: var(--page); -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--paper); color: var(--ink);
+  margin: 0; background: var(--page); color: var(--ink);
   font-family: var(--font-sans-stack); font-size: 15px; line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
@@ -199,8 +173,30 @@ section > .grid-2 + .panel, section > .grid-even + .panel, section > .panel + .g
 .crm-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .row-edit { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-sans-stack); font-size: .76rem; font-weight: 600; color: var(--gold); white-space: nowrap; }
 
-.drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--paper) 82%, transparent); border: 3px dashed var(--watch); }
+.drop-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: color-mix(in srgb, var(--page) 85%, transparent); border: 3px dashed var(--watch); }
 .drop-overlay div { display: grid; justify-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; color: var(--ink); pointer-events: none; }
+
+/* Patient Acquisition Cost tab */
+.kpi.accent { background: var(--callout); border-left-color: var(--s3); }
+.kpi.accent .value { color: var(--gold); }
+.peso-input { position: relative; display: inline-flex; align-items: center; }
+.peso-input > span { position: absolute; left: 10px; color: var(--gold); font-weight: 600; pointer-events: none; }
+.peso-input input { width: 130px; min-height: 36px; border: 1px solid var(--line); background: var(--page); border-radius: 6px; padding: 0 10px 0 24px; text-align: right; font-family: var(--font-mono-stack); font-size: .86rem; color: var(--ink); }
+.peso-input.wide input { width: 190px; min-height: 40px; font-size: .95rem; font-weight: 600; }
+.peso-input input:disabled { background: var(--paper); color: var(--ink-soft); }
+.acq-types tr.selected td { background: var(--callout); }
+.acq-types tr.rollup td { font-weight: 700; }
+.acq-types tr.total td { border-top: 2px solid var(--ink); font-weight: 700; }
+td.muted { color: var(--ink-soft); }
+td.strong { font-weight: 700; color: var(--gold); }
+.acq-sources { max-height: 460px; overflow-y: auto; }
+.grid-2.acq-grid { grid-template-columns: 1fr; }
+.acq-sources .peso-input input { width: 112px; }
+.acq-sources td.name { min-width: 120px; }
+.acq-sources td { vertical-align: middle; }
+.alloc { font-size: .78rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--callout); color: var(--gold); }
+.alloc.ok { background: var(--paper); color: var(--ink); }
+@media (max-width: 600px) { .peso-input.wide input { width: 100%; } .peso-input.wide { display: flex; } }
 
 /* Sales report files on the Sales Dashboard */
 .files-panel { margin-bottom: 18px; }
@@ -454,9 +450,9 @@ footer.source { color: var(--ink-soft); font-size: .76rem; border-top: 1px solid
 }
 
 @media print {
-  :root, :root:not([data-theme="light"]) {
+  :root {
     color-scheme: light;
-    --ink: #1b1915; --ink-soft: #6b6252; --paper: #ffffff; --panel: #fffdf8; --line: #e7dcc6;
+    --page: #ffffff; --ink: #1b1915; --ink-soft: #6b6252; --paper: #ffffff; --panel: #ffffff; --line: #e7dcc6;
     --bar: #161411; --bar-ink: #fffdf8; --bar-soft: #c9b48a; --brand: #f0c864; --primary: #1b1915; --primary-ink: #f0c864;
     --s1: #1b1915; --s1-text: #f6f1e7;
     --s2: #b8860b; --s2-text: #ffffff;

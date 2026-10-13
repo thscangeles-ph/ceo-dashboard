@@ -120,7 +120,7 @@ export function Briefing({ s, findings, decisions, period }: { s: SalesSummary; 
               </tbody>
             </table>
           </div>
-          <p className="decisions-note">Suggested from this period&apos;s numbers. Marketing spend and cost per patient are tracked in the Patient Acquisition Dashboard.</p>
+          <p className="decisions-note">Suggested from this period&apos;s numbers. Marketing spend and cost per new patient are on the Patient Acquisition Cost tab.</p>
         </div>
       )}
     </section>

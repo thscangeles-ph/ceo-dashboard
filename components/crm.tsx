@@ -287,7 +287,7 @@ export function CrmDashboard({ rows, deidentified = false, onOpenTracker, onUplo
 
           <section>
             <SectionHead n={6} title="Marketing analysis" doctor="identify which advertising campaigns lead to actual bookings.">
-              Ad spend and cost per patient stay in the Patient Acquisition Dashboard.
+              Ad spend and cost per new patient are on the Patient Acquisition Cost tab.
             </SectionHead>
             <div className="panel">
               <h3>Inquiries by source group</h3>

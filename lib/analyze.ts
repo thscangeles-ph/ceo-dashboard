@@ -356,7 +356,7 @@ export function buildFindings(s: SalesSummary, q: InquirySummary | null): Findin
   return findings;
 }
 
-/** Suggested decisions for the next leadership meeting. Marketing spend and acquisition cost live in the acquisition dashboard. */
+/** Suggested decisions for the next leadership meeting. Marketing spend and acquisition cost are on the Patient Acquisition Cost tab (lib/acquisition.ts). */
 export function buildDecisions(s: SalesSummary, q: InquirySummary | null): Decision[] {
   const decisions: Decision[] = [];
   const top = s.physicians.slice(0, 8);

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@supabase/supabase-js";
+import type { AcquisitionSpend } from "./acquisition";
+import { spendKey } from "./acquisition";
 import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
 import { sheetKey } from "./parse";
 
@@ -96,12 +98,15 @@ async function fetchAll<T>(sb: SupabaseClient, table: string): Promise<T[]> {
 /** Everything the signed-in person is allowed to see. Concierge get the CRM; Marketing get de-identified views. */
 export async function loadCloud(sb: SupabaseClient, role: Role) {
   const marketing = role === "marketing";
-  const [inquiries, sales, sheets] = await Promise.all([
+  const [inquiries, sales, sheetRows] = await Promise.all([
     fetchAll<InquiryRow>(sb, marketing ? "inquiries_marketing" : "inquiries"),
     role === "concierge" ? Promise.resolve([] as SalesRow[]) : fetchAll<SalesRow>(sb, marketing ? "sales_marketing" : "sales_rows"),
-    fetchAll<SheetSummary>(sb, "sheets"),
+    fetchAll<SheetSummary | SpendRecord>(sb, "sheets"),
   ]);
-  return { inquiries, sales, sheets };
+  const isSpend = (r: SheetSummary | SpendRecord): r is SpendRecord => "setting" in r && r.setting === "acquisition-spend";
+  const sheets = sheetRows.filter((r): r is SheetSummary => !isSpend(r));
+  const spends: AcquisitionSpend[] = sheetRows.filter(isSpend).map((r) => ({ from: r.from, to: r.to, total: r.total, bySource: r.bySource, updatedAt: r.updatedAt }));
+  return { inquiries, sales, sheets, spends };
 }
 
 async function upsert(sb: SupabaseClient, table: string, input: { key: string; data: unknown; kind?: string }[]) {
@@ -114,6 +119,15 @@ async function upsert(sb: SupabaseClient, table: string, input: { key: string; d
 }
 
 export const saveInquiries = (sb: SupabaseClient, rows: InquiryRow[]) => upsert(sb, "inquiries", rows.map((r) => ({ key: r.rowKey, data: r })));
+/**
+ * Marketing spend is kept in the sheets table next to the sales reports, so it needs no extra database
+ * setup and follows the same access rules: full-access accounts change it, Marketing can read it,
+ * Concierge can't see it. loadCloud separates these rows from the uploaded sheets.
+ */
+type SpendRecord = AcquisitionSpend & { setting: "acquisition-spend" };
+export const saveSpend = (sb: SupabaseClient, spend: AcquisitionSpend) =>
+  upsert(sb, "sheets", [{ key: `setting|acquisition-spend|${spendKey(spend.from, spend.to)}`, kind: "sales", data: { ...spend, setting: "acquisition-spend" } satisfies SpendRecord }]);
+
 export const saveSales = (sb: SupabaseClient, rows: SalesRow[]) => upsert(sb, "sales_rows", rows.map((r) => ({ key: r.rowKey, data: r })));
 export const saveSheets = (sb: SupabaseClient, rows: SheetSummary[]) => upsert(sb, "sheets", rows.map((s) => ({ key: sheetKey(s), kind: s.kind, data: s })));
 

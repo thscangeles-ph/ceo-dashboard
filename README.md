@@ -15,7 +15,14 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 
 **Everything is clickable.** Click a KPI card, chart bar, bar segment, legend item, finding or table row to open a details panel with the records behind that number: patients, visits, revenue, breakdowns by patient type and service, and the billed line items, which can be downloaded as Excel. Patient names are not shown for sales data.
 
-Marketing spend and acquisition cost are **not** part of this app. They live in the separate THSC Patient Acquisition Dashboard.
+**Patient Acquisition Cost tab** (formerly the separate THSC Patient Acquisition Dashboard), from the same uploaded sales reports:
+
+- Patient type filter (NEW by default), status, a date range, and the **total marketing spend** for that range
+- Unique patients, transactions and revenue for the chosen type, and **acquisition cost per new patient** (spend ÷ NEW and HMO/NEW patients in the range)
+- **Patients by type** table (click a row to switch the cards), new patients by acquisition source (each new patient counted once, under the first source they gave), and **cost by source** with a spend box per source
+- Spend is saved per date range: pick the month first, then enter that month's spend. With accounts it is shared with the team; Admin, ManCom and Doctors can change it, Marketing can view it, Concierge doesn't see this tab.
+
+The app always uses the light look on a white page, even when the device is set to dark mode.
 
 Out of the box, workbooks are processed in the browser and never uploaded to a server, and no environment variables are needed. Connect Supabase (see **Accounts and shared data**) to add logins and share the data across the team.
 
