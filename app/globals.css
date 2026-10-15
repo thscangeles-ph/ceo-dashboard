@@ -141,6 +141,39 @@ tr.is-clickable:hover td { background: color-mix(in srgb, var(--watch) 12%, tran
 .tabs button:hover { color: var(--ink); }
 .tabs button.on { color: var(--ink); border-bottom-color: var(--watch); }
 .tabs button small { font-family: var(--font-mono-stack); font-size: .72rem; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--ink-soft); }
+
+/* Sections: a tab bar on phones and tablets, a sidebar (like Claude's) on computers. */
+.layout > .sidebar { margin: 18px 28px 0; }
+.sidebar .side-label, .sidebar .side-collapse, .sidebar .side-short { display: none; }
+.sidebar .side-empty { font-style: normal; font-size: .7rem; color: var(--ink-soft); }
+@media (max-width: 600px) {
+  .layout > .sidebar { margin: 12px 16px 0; }
+  .sidebar .side-empty, .sidebar .side-text, .sidebar small { display: none; }
+  .sidebar .side-short { display: inline; }
+  .layout > .sidebar button { padding: 12px 6px; gap: 6px; }
+  .hide-phone { display: none !important; }
+}
+@media print { .layout { display: block !important; } .layout .wrap { padding: 0 !important; } }
+@media (min-width: 1000px) {
+  .appbar-inner { max-width: none; padding-left: 24px; padding-right: 24px; }
+  .layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); align-items: start; }
+  .layout.collapsed { grid-template-columns: 68px minmax(0, 1fr); }
+  .layout > .sidebar {
+    position: sticky; top: 68px; height: calc(100vh - 68px); margin: 0; padding: 18px 12px; overflow: hidden auto;
+    flex-direction: column; gap: 2px; border-bottom: 0; border-right: 1px solid var(--line); background: var(--paper);
+  }
+  .sidebar .side-empty { display: none; }
+  .sidebar .side-label { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); padding: 0 12px 8px; }
+  .sidebar .side-text { display: inline; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .layout > .sidebar button { width: 100%; justify-content: flex-start; gap: 12px; margin: 0; padding: 10px 12px; border: 0; border-radius: 8px; font-size: .9rem; }
+  .layout > .sidebar button:hover { background: var(--panel); color: var(--ink); }
+  .layout > .sidebar button.on { background: var(--panel); color: var(--ink); box-shadow: inset 3px 0 0 var(--watch), 0 1px 2px rgba(27, 25, 21, .06); }
+  .sidebar .side-collapse { display: flex; margin-top: auto !important; color: var(--ink-soft); font-weight: 500; }
+  .layout.collapsed > .sidebar { padding: 18px 10px; }
+  .layout.collapsed .sidebar .side-label, .layout.collapsed .sidebar .side-text, .layout.collapsed .sidebar small, .layout.collapsed .sidebar .side-empty { display: none; }
+  .layout.collapsed > .sidebar button { justify-content: center; padding: 10px 0; }
+  .layout .wrap { max-width: none; margin: 0; padding: 26px 36px 80px; min-width: 0; }
+}
 .empty-tab { margin-top: 26px; }
 .empty-tab h3 { display: flex; gap: 8px; align-items: center; }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -60,6 +60,10 @@ export default function Home() {
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
   const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker">("summary");
+  // The sidebar can shrink to icons for more room; remembered on this device.
+  const [sideCollapsed, setSideCollapsed] = useState(false);
+  useEffect(() => { try { if (localStorage.getItem("thsc-sidebar") === "collapsed") setTimeout(() => setSideCollapsed(true), 0); } catch { /* storage blocked */ } }, []);
+  const toggleSide = (collapsed: boolean) => { setSideCollapsed(collapsed); try { localStorage.setItem("thsc-sidebar", collapsed ? "collapsed" : "open"); } catch { /* storage blocked */ } };
   // Marketing spend for the Patient Acquisition Cost tab: shared in the cloud, or kept in this browser without accounts.
   const [spends, setSpends] = useState<AcquisitionSpend[]>([]);
   // Opening the tracker from the CRM's follow-up queue searches for that patient.
@@ -479,6 +483,13 @@ export default function Home() {
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((current) => ({ ...current, [key]: value }));
   const hasData = sales.length > 0 || inquiries.length > 0;
 
+  const NAV: { key: typeof tab; label: string; short: string; icon: typeof BarChart3; show: boolean; count?: number; empty?: string }[] = [
+    { key: "summary", label: "Sales Dashboard", short: "Sales", icon: BarChart3, show: role !== "concierge", empty: sales.length ? undefined : "no file" },
+    { key: "acquisition", label: "Patient Acquisition Cost", short: "Acquisition", icon: PhilippinePeso, show: role !== "concierge", empty: teamSales.length ? undefined : "no file" },
+    { key: "crm", label: "CRM Dashboard", short: "CRM", icon: Users, show: true, empty: inquiries.length ? undefined : "no tracker" },
+    { key: "tracker", label: "Inquiry Tracker", short: "Tracker", icon: ListChecks, show: canEdit, count: inquiries.length },
+  ];
+
   // Sign-in gates when accounts are on.
   if (auth.status === "loading") return <LoadingScreen />;
   if (auth.status === "signedOut") return <LoginScreen linkError={auth.linkError} />;
@@ -506,8 +517,8 @@ export default function Home() {
           <div className="appbar-actions">
             <InstallAppButton />
             {canEdit && <button type="button" className="btn btn-ghost" onClick={() => pickFiles()} aria-label="Add Excel files"><Upload size={16} /><span className="hide-sm">Add files</span></button>}
-            {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
-            {cloud && <button type="button" className="btn btn-ghost" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
+            {(summary || inquiries.length > 0) && <button type="button" className="btn btn-ghost hide-phone" onClick={() => window.print()} aria-label="Print or save as PDF"><Printer size={16} /><span className="hide-sm">Print</span></button>}
+            {cloud && <button type="button" className="btn btn-ghost hide-phone" onClick={() => void refreshCloud()} disabled={busy} aria-label="Refresh shared data"><RefreshCw size={16} /><span className="hide-sm">Refresh</span></button>}
             {cloud && full && <button type="button" className="btn btn-ghost" onClick={() => setTeam(true)} aria-label="Team access"><UserCog size={16} /><span className="hide-sm">Team</span></button>}
             {cloud && <button type="button" className="btn btn-ghost" onClick={() => void signOut()} aria-label="Sign out"><LogOut size={16} /><span className="hide-sm">Sign out</span></button>}
             {!cloud && hasData && <button type="button" className="btn btn-ghost" onClick={reset} aria-label="Start over"><RefreshCw size={16} /><span className="hide-sm">Start over</span></button>}
@@ -516,6 +527,27 @@ export default function Home() {
       </div>
       <input ref={inputRef} type="file" multiple accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="sr-only" onChange={(e) => void processFiles(Array.from(e.target.files || []), uploadKind.current)} />
 
+      <div className={`layout${sideCollapsed ? " collapsed" : ""}`}>
+      {/* The sections, always there with or without files: a sidebar on computers, a tab bar on phones. */}
+      {!restoring && (
+        <nav className="tabs sidebar no-print" aria-label="Dashboard sections">
+          <div className="side-label">Dashboards</div>
+          {NAV.filter((item) => item.show).map((item) => {
+            const Icon = item.icon;
+            return (
+              <button key={item.key} type="button" className={tab === item.key ? "on" : ""} aria-current={tab === item.key ? "page" : undefined} title={item.label}
+                onClick={() => (item.key === "tracker" ? openTracker() : setTab(item.key))}>
+                <Icon size={18} aria-hidden />
+                <span className="side-text">{item.label}</span><span className="side-short">{item.short}</span>
+                {item.count ? <small>{count(item.count)}</small> : item.empty ? <em className="side-empty">{item.empty}</em> : null}
+              </button>
+            );
+          })}
+          <button type="button" className="side-collapse" onClick={() => toggleSide(!sideCollapsed)} aria-label={sideCollapsed ? "Expand the sidebar" : "Collapse the sidebar"} title={sideCollapsed ? "Expand" : "Collapse"}>
+            {sideCollapsed ? <PanelLeftOpen size={18} aria-hidden /> : <PanelLeftClose size={18} aria-hidden />}<span className="side-text">Collapse</span>
+          </button>
+        </nav>
+      )}
       <div className="wrap">
         {cloud && restoring && <p className="empty-note" role="status" style={{ marginTop: 20 }}>Loading shared data…</p>}
         {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Something needs attention.</strong> {error}</div></div>}
@@ -543,16 +575,6 @@ export default function Home() {
           </div>
         )}
         {/* Uploaded files are listed in their own tabs: sales reports on the Sales Dashboard, tracker files in the Inquiry Tracker. */}
-
-        {/* The tabs are always there, with or without files; each tab says what is missing. */}
-        {!restoring && (
-          <nav className="tabs no-print" aria-label="Dashboard sections">
-            {role !== "concierge" && <button type="button" className={tab === "summary" ? "on" : ""} aria-current={tab === "summary" ? "page" : undefined} onClick={() => setTab("summary")}><BarChart3 size={16} /><span>Sales<span className="hide-sm"> Dashboard</span>{!sales.length && <span className="hide-sm"> (no sales report)</span>}</span></button>}
-            {role !== "concierge" && <button type="button" className={tab === "acquisition" ? "on" : ""} aria-current={tab === "acquisition" ? "page" : undefined} onClick={() => setTab("acquisition")}><PhilippinePeso size={16} /><span><span className="hide-sm">Patient </span>Acquisition<span className="hide-sm"> Cost</span></span></button>}
-            <button type="button" className={tab === "crm" ? "on" : ""} aria-current={tab === "crm" ? "page" : undefined} onClick={() => setTab("crm")}><Users size={16} /><span>CRM<span className="hide-sm"> Dashboard</span>{!inquiries.length && <span className="hide-sm"> (no tracker)</span>}</span></button>
-            {canEdit && <button type="button" className={tab === "tracker" ? "on" : ""} aria-current={tab === "tracker" ? "page" : undefined} onClick={() => openTracker()}><ListChecks size={16} />Inquiry Tracker{inquiries.length > 0 && <small className="hide-sm">{count(inquiries.length)}</small>}</button>}
-          </nav>
-        )}
 
         {!restoring && tab === "acquisition" && role !== "concierge" && (
           <AcquisitionDashboard key={teamSales.length ? "data" : "empty"} rows={teamSales} spends={spends} canEdit={full}
@@ -654,6 +676,7 @@ export default function Home() {
             </SalesFiles>
           </>
         )}
+      </div>
       </div>
       {dragging && canEdit && (
         <div className="drop-overlay no-print" onDragLeave={() => setDragging(false)}><div><Upload size={28} />Drop Excel files to add them</div></div>
