@@ -102,13 +102,15 @@ The Inquiry Tracker tab is where inquiries are logged and kept up to date. The C
 
 ## Install on a PC, phone or tablet
 
-The dashboard is a Progressive Web App. Once installed, it opens in its own window (or full screen on a phone) and keeps working without a connection.
+The dashboard is a Progressive Web App. Once installed it opens in its own window (or full screen on a phone), gets a home-screen / Dock / Start-menu icon, stays signed in, and opens even without a connection.
 
-- **Windows / Mac (Chrome or Edge):** open the site and click **Install app** in the header, or the install icon in the address bar. On a computer, Excel files can also be opened with the installed app ("Open with → Summary Dashboard").
-- **Android (Chrome):** tap **Install app**, or browser menu → **Install app** / **Add to Home screen**.
-- **iPhone and iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen**. The **Install app** button shows these steps.
+An **Install app** button is in the header on every screen, including the sign-in page, and is hidden inside the installed app:
 
-Installing requires HTTPS, so use the Vercel address. The service worker (`public/sw.js`) caches only the app's own files, never workbooks or patient data.
+- **Windows / Mac in Chrome or Edge, and Android in Chrome:** the button opens the browser's install prompt; click **Install**. (Also: the install icon in the address bar, or the browser menu → Install.)
+- **iPhone and iPad:** the button shows the steps: Safari → **Share** → **Add to Home Screen** → **Add**.
+- **Mac Safari:** **File → Add to Dock**. **Firefox** can't install web apps; the button says to use Chrome or Edge.
+
+Installing requires HTTPS, so use the Vercel address. On a computer, Excel files can also be opened with the installed app ("Open with → Summary Dashboard"). The service worker (`public/sw.js`) caches only the app's own files, never workbooks or patient data.
 
 ## Excel format
 

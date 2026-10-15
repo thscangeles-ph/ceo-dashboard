@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import { InstallAppButton } from "@/components/pwa";
 import type { NewMember, Profile, Role } from "@/lib/cloud";
 import { configProblem, createMember, friendly, getCloud, isFullAccess, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
 
@@ -15,9 +16,13 @@ function Shell({ children }: { children: React.ReactNode }) {
             <img src="/theheartspecialists.png" alt="" width={36} height={48} />
             <div style={{ minWidth: 0 }}><div className="clinic">THE HEART SPECIALISTS CLINIC</div><div className="app">Summary Dashboard</div></div>
           </div>
+          <div className="appbar-actions"><InstallAppButton /></div>
         </div>
       </div>
-      <div className="wrap"><div className="auth-card panel">{children}</div></div>
+      <div className="wrap">
+        <div className="auth-card panel">{children}</div>
+        <p className="install-hint no-print"><InstallAppButton variant="outline" label="Install the app on this device" /></p>
+      </div>
     </main>
   );
 }
