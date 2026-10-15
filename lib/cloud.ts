@@ -69,6 +69,12 @@ export async function listProfiles(sb: SupabaseClient): Promise<Profile[]> {
   return ((data || []) as Profile[]).map((p) => ({ ...p, role: normalizeRole(p.role) }));
 }
 
+/** Changes the name shown for a person (Team list, step history). */
+export async function setProfileName(sb: SupabaseClient, id: string, fullName: string) {
+  const { error } = await sb.from("profiles").update({ full_name: fullName }).eq("id", id);
+  if (error) throw new Error(friendly(error.message));
+}
+
 export async function setProfileRole(sb: SupabaseClient, id: string, role: Role | null) {
   const { error } = await sb.from("profiles").update({ role }).eq("id", id);
   if (error) throw new Error(friendly(error.message));

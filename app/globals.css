@@ -382,6 +382,9 @@ table.trk { width: max-content; min-width: 100%; border-collapse: separate; bord
 .notice { margin-top: 16px; border: 1px solid var(--watch); background: var(--callout); padding: 12px 14px; display: flex; gap: 10px; font-size: .88rem; }
 .device-move { flex-wrap: wrap; justify-content: space-between; align-items: center; }
 .device-move-actions { display: flex; gap: 8px; }
+.name-btn { margin-left: 6px; vertical-align: -3px; padding: 2px; color: var(--ink-soft); }
+.name-edit { display: inline-flex; align-items: center; gap: 4px; }
+.name-edit input { min-height: 32px; width: 200px; max-width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 0 8px; font: inherit; font-size: .88rem; }
 .role-select { min-height: 36px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 0 8px; font-size: .84rem; }
 .add-person { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 16px; margin-bottom: 18px; }
 .add-person .field-grid input, .add-person .field-grid select { background: var(--panel); }

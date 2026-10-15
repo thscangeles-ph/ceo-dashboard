@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, LogIn, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import { Check, KeyRound, LogIn, Mail, Pencil, ShieldCheck, UserPlus, X } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import type { NewMember, Profile, Role } from "@/lib/cloud";
-import { configProblem, createMember, friendly, getCloud, isFullAccess, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileRole } from "@/lib/cloud";
+import { configProblem, createMember, friendly, getCloud, isFullAccess, listProfiles, ROLE_DETAIL, ROLE_LABEL, setMemberPassword, setProfileName, setProfileRole } from "@/lib/cloud";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -175,6 +175,19 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<{ text: string; password?: string } | null>(null);
   const [pwFor, setPwFor] = useState<string | null>(null);
+  // The person whose name is being edited, and the name typed so far.
+  const [naming, setNaming] = useState<{ id: string; value: string } | null>(null);
+  const saveName = async () => {
+    if (!naming) return;
+    const name = naming.value.trim().replace(/\s+/g, " ").slice(0, 120);
+    setSaving(naming.id); setError("");
+    try {
+      await setProfileName(getCloud()!, naming.id, name);
+      setPeople((list) => list?.map((p) => (p.id === naming.id ? { ...p, full_name: name } : p)) || null);
+      setNaming(null);
+    } catch (e) { setError((e as Error).message); }
+    setSaving("");
+  };
   const [newPw, setNewPw] = useState("");
   const [pwDone, setPwDone] = useState<{ text: string; password: string } | null>(null);
 
@@ -192,7 +205,8 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
   useEffect(() => {
     let live = true;
     listProfiles(getCloud()!).then((list) => { if (live) setPeople(list); }).catch((e: Error) => { if (live) setError(e.message); });
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    // Esc closes the panel, unless it was used to cancel a name edit.
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => { live = false; document.removeEventListener("keydown", onKey); };
   }, [onClose]);
@@ -274,7 +288,23 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
                   <tr><th>Person</th><th>Access</th><th></th></tr>
                   {people.map((p) => (
                     <tr key={p.id}>
-                      <td className="name">{p.full_name || p.email}{p.full_name && <small className="muted"><br />{p.email}</small>}{p.id === me && <small className="muted"> (you)</small>}</td>
+                      <td className="name">
+                        {naming?.id === p.id ? (
+                          <span className="name-edit">
+                            <input autoFocus value={naming.value} placeholder="FULL NAME" aria-label={`Name for ${p.email}`} maxLength={120}
+                              onChange={(e) => setNaming({ id: p.id, value: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveName(); } if (e.key === "Escape") { e.preventDefault(); setNaming(null); } }} />
+                            <button type="button" className="icon-btn" onClick={() => void saveName()} disabled={saving === p.id} aria-label="Save name"><Check size={16} /></button>
+                            <button type="button" className="icon-btn" onClick={() => setNaming(null)} aria-label="Cancel"><X size={16} /></button>
+                          </span>
+                        ) : (
+                          <>
+                            {p.full_name || <span className="muted">No name yet</span>}
+                            <button type="button" className="icon-btn name-btn" onClick={() => setNaming({ id: p.id, value: p.full_name || "" })} aria-label={`Edit the name of ${p.email}`} title="Edit name"><Pencil size={14} /></button>
+                          </>
+                        )}
+                        <small className="muted"><br />{p.email}</small>{p.id === me && <small className="muted"> (you)</small>}
+                      </td>
                       <td>
                         <select className="role-select" value={p.role || "none"} disabled={saving === p.id} onChange={(e) => void change(p, e.target.value)}>
                           {ACCESS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
