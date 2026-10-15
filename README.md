@@ -83,6 +83,8 @@ The database enforces this (Row Level Security and de-identified views), not onl
 8. **Make it Admin:** in the SQL Editor run `update public.profiles set role = 'admin' where email = 'you@example.com';` with your email.
 9. Sign in to the app. If the device still has data from before, click **Move to shared**.
 
+**"Error sending recovery email" / invite emails not arriving:** Supabase's built-in email sender only sends a few emails an hour, and only to addresses on the Supabase organization's team. Use **Team → Set password** instead, or connect your own sender in Supabase → Authentication → Emails → **SMTP Settings** (for example a Gmail account with an app password: host `smtp.gmail.com`, port `465`, username = the Gmail address, password = the app password).
+
 **Adding people:** open **Team → Add person**, enter name and email, pick **Admin**, **ManCom**, **Doctors**, **Concierge** or **Marketing**, and either email them an invitation (they choose their password) or set a temporary password to share yourself. Change anyone's access, or set **No access**, from the same list. If an invite link expired or someone is locked out, click **Set password** next to them and give them the new password privately; they can change it later with **Forgot your password?**. Without the server key, add people in Supabase → Authentication → Users and set their access in Team.
 
 Patient names, contact numbers and procedures are sensitive personal information under the Data Privacy Act of 2012; agree on who gets which account with the clinic's Data Protection Officer, and sign out on shared computers.
