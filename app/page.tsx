@@ -590,7 +590,7 @@ export default function Home() {
 
         {!restoring && tab === "tracker" && canEdit && (
           <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
-            sheets={sheets} busy={busy} onUpload={() => pickFiles("concierge")}
+            sheets={sheets} busy={busy} onUpload={() => pickFiles("concierge")} actor={auth.status === "signedIn" ? auth.email : ""}
             onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
         )}
 
@@ -683,7 +683,8 @@ export default function Home() {
       )}
       <DrillPanel drill={drill} onClose={closeDrill} context={tab === "crm" ? "Concierge inquiry tracker" : tab === "acquisition" ? "Patient Acquisition Cost" : [period, hasTypes ? (filters.patientType === "all" ? "All patient types" : typeInfo.short) : "", hasPaid && filters.status === "paid" ? "PAID" : ""].filter(Boolean).join(" · ")} />
       {team && auth.status === "signedIn" && <TeamPanel me={auth.userId} onClose={closeTeam} />}
-      {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor} />}
+      {editor && <InquiryEditor key={editor.row?.rowKey || "new"} row={editor.row} isNew={!editor.row} rows={inquiries} onSave={saveInquiry} onDelete={deleteInquiry} onClose={closeEditor}
+        actor={auth.status === "signedIn" ? auth.email : ""} canDelete={full} />}
     </main>
     </EditorProvider>
     </DrillProvider>

@@ -52,6 +52,11 @@ export type InquiryRow = {
   respondedAt: Date | null;
   /** Did staff reply to the inquiry? null = the sheet has no Responded column (see effectiveResponded). */
   responded: boolean | null;
+  /**
+   * Each action or step taken, in order. Concierge can only add to it; only full-access accounts can
+   * remove a step. `action` holds the same steps as one line for the Excel export and older views.
+   */
+  actionLog?: ActionStep[];
   /** Set when staff update the inquiry in the app; overrides what the sheet columns imply. */
   outcome?: LeadState;
   editedAt?: Date;
@@ -59,6 +64,9 @@ export type InquiryRow = {
 };
 
 /** One loaded sheet. Sales sheets get an `id` per upload, so each uploaded file can be removed again. */
+/** One action or step taken on an inquiry, with when, who and the outcome at the time. */
+export type ActionStep = { text: string; at: Date; by: string; outcome?: LeadState };
+
 export type SheetSummary = { file: string; sheet: string; kind: "sales" | "concierge"; rows: number; columns: string[]; id?: string; uploadedAt?: Date };
 /** Stands for the sales files uploaded before uploads were tracked; their rows can only be removed together. */
 export const LEGACY_UPLOAD = "before-file-tracking";

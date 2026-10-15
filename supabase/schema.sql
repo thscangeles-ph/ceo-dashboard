@@ -116,6 +116,28 @@ create policy "inquiries: concierge and admins" on public.inquiries
   using (public.full_access() or public.app_role() = 'concierge')
   with check (public.full_access() or public.app_role() = 'concierge');
 
+-- Steps taken on an inquiry (data -> 'actionLog') can be added by Concierge but only removed by
+-- Admin, ManCom or Doctors, who are also the only ones who can delete an inquiry.
+create or replace function public.protect_inquiry_steps()
+returns trigger language plpgsql set search_path = public
+as $$
+begin
+  if public.full_access() or auth.uid() is null then
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'DELETE' then
+    raise exception 'Only an Admin, ManCom or Doctors account can delete an inquiry.' using errcode = '42501';
+  end if;
+  if not (coalesce(new.data -> 'actionLog', '[]'::jsonb) @> coalesce(old.data -> 'actionLog', '[]'::jsonb)) then
+    raise exception 'Steps already recorded on an inquiry can only be removed by an Admin, ManCom or Doctors account.' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists protect_inquiry_steps on public.inquiries;
+create trigger protect_inquiry_steps before update or delete on public.inquiries
+  for each row execute function public.protect_inquiry_steps();
+
 drop policy if exists "sales: admins only" on public.sales_rows;
 create policy "sales: admins only" on public.sales_rows
   for all to authenticated

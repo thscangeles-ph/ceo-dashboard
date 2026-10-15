@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { inquiryTopic } from "./crm";
 import type { LeadState } from "./lead";
 import { effectiveResponded, leadState } from "./lead";
-import type { InquiryRow } from "./parse";
+import type { ActionStep, InquiryRow } from "./parse";
 
 /** The fields staff fill in when adding or updating an inquiry in the app. */
 export type InquiryForm = {
@@ -25,7 +25,8 @@ export type InquiryForm = {
   revenue: string;
   payment: string;
   lostReason: string;
-  action: string;
+  /** Steps already on the inquiry plus any added in the form. */
+  steps: ActionStep[];
   staff: string;
   referredBy: string;
   campaign: string;
@@ -33,8 +34,18 @@ export type InquiryForm = {
   respondedTime: string;
 };
 
-export const LOST_REASONS = ["Patient chose another facility", "Location too far for patient", "Price / fees too high", "HMO not accepted", "Schedule not available", "No response after follow-ups", "Not interested"];
-export const PAYMENT_MODES = ["Cash", "HMO", "GCash", "Debit Card", "Credit Card", "Bank Transfer"];
+export const LOST_REASONS = ["PATIENT CHOSE ANOTHER FACILITY", "LOCATION TOO FAR FOR PATIENT", "PRICE / FEES TOO HIGH", "HMO NOT ACCEPTED", "SCHEDULE NOT AVAILABLE", "NO RESPONSE AFTER FOLLOW-UPS", "NOT INTERESTED"];
+export const PAYMENT_MODES = ["CASH", "HMO", "GCASH", "DEBIT CARD", "CREDIT CARD", "BANK TRANSFER"];
+/** The channels an inquiry can come in through; anything else is typed in under Others. */
+export const CHANNELS = ["FB CALL", "FB MESSENGER", "SMS TEXT", "CELLULAR CALL", "VIBER CALL", "VIBER MESSAGE"];
+/** Outcome choices in the order staff work through them. */
+export const OUTCOME_ORDER: LeadState[] = ["open", "booked", "served", "cancelled", "lost", "noShow"];
+/** Everything staff type is kept in capitals, for consistency. */
+export const caps = (value: string) => value.toUpperCase();
+/** Tomorrow's date for the follow-up box (yyyy-mm-dd). */
+export const tomorrowInput = (now = new Date()) => toDateInput(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+/** The steps as one line, for the Excel export, search and older views. */
+export const stepsText = (steps: ActionStep[]) => steps.map((s) => s.text).join("; ");
 const LOST_PREFIX = "No further action — ";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -52,9 +63,16 @@ const sheetTime = (d: Date | null | undefined) => (d ? d.toLocaleTimeString("en-
 export function emptyForm(now = new Date()): InquiryForm {
   return {
     patientStatus: "New", date: toDateInput(now), time: toTimeInput(now), channel: "", patient: "", contact: "", procedure: "", branch: "", inquired: "", responded: "no",
-    outcome: "open", bookedDate: "", appointmentDate: "", reminderDate: "", reminderMethod: "SMS Reminder", followUpDate: "", revenue: "", payment: "",
-    lostReason: "", action: "", staff: "", referredBy: "", campaign: "", respondedDate: "", respondedTime: "",
+    outcome: "open", bookedDate: "", appointmentDate: "", reminderDate: "", reminderMethod: "SMS REMINDER", followUpDate: tomorrowInput(now), revenue: "", payment: "",
+    lostReason: "", steps: [], staff: "", referredBy: "", campaign: "", respondedDate: "", respondedTime: "",
   };
+}
+
+/** The steps on a row; rows from the Excel file (or before steps existed) have their action text as one step. */
+export function stepsOf(row: InquiryRow): ActionStep[] {
+  if (row.actionLog) return row.actionLog;
+  const text = (row.action.startsWith(LOST_PREFIX) ? row.action.slice(LOST_PREFIX.length).split(". ").slice(1).join(". ") : row.action || row.remarks).trim();
+  return text ? [{ text, at: row.editedAt || row.date || new Date(), by: "TRACKER FILE" }] : [];
 }
 
 export function formFromRow(row: InquiryRow): InquiryForm {
@@ -68,7 +86,7 @@ export function formFromRow(row: InquiryRow): InquiryForm {
     bookedDate: toDateInput(row.bookedDate), appointmentDate: toDateInput(row.appointmentDate), reminderDate: toDateInput(row.reminderDate),
     reminderMethod: row.reminder.split(/\s[–—-]\s/).slice(1).join(" ").trim() || "SMS Reminder",
     followUpDate: toDateInput(row.followUpDate), revenue: row.revenue ? String(row.revenue) : "", payment: row.payment,
-    lostReason: lost ? row.action.slice(LOST_PREFIX.length) : "", action: lost ? "" : row.action,
+    lostReason: lost ? row.action.slice(LOST_PREFIX.length).split(". ")[0] : "", steps: stepsOf(row),
     staff: row.staff, referredBy: row.referredBy, campaign: row.campaign,
     respondedDate: toDateInput(row.respondedAt), respondedTime: toTimeInput(row.respondedAt),
   };
@@ -80,7 +98,8 @@ export function rowFromForm(f: InquiryForm, base?: InquiryRow): InquiryRow {
   const date = fromInputs(f.date, f.time);
   const followUpDate = f.outcome === "open" || f.outcome === "noShow" ? fromInputs(f.followUpDate) : null;
   const reminderDate = booked ? fromInputs(f.reminderDate) : null;
-  const action = f.outcome === "lost" && f.lostReason ? `${LOST_PREFIX}${f.lostReason}${f.action ? `. ${f.action}` : ""}` : f.action.trim();
+  const joined = stepsText(f.steps);
+  const action = f.outcome === "lost" && f.lostReason ? `${LOST_PREFIX}${f.lostReason}${joined ? `. ${joined}` : ""}` : joined;
   return {
     date, hasTime: Boolean(f.time), patient: f.patient.trim(), contact: f.contact.trim(), patientStatus: f.patientStatus,
     channel: f.channel.trim() || "Not recorded", branch: f.branch.trim() || "Not recorded", procedure: f.procedure.trim(),
@@ -90,7 +109,7 @@ export function rowFromForm(f: InquiryForm, base?: InquiryRow): InquiryRow {
     followUp: followUpDate ? sheetDate(followUpDate) : "", followUpDate,
     reminder: reminderDate ? `${sheetDate(reminderDate)} – ${f.reminderMethod || "SMS Reminder"}` : "", reminderDate,
     revenue: f.outcome === "served" ? Math.max(0, Number(f.revenue.replace(/[₱,\s]/g, "")) || 0) : 0,
-    action, remarks: action, staff: f.staff.trim(), referredBy: f.referredBy.trim(), campaign: f.campaign.trim(),
+    action, remarks: action, actionLog: f.steps, staff: f.staff.trim(), referredBy: f.referredBy.trim(), campaign: f.campaign.trim(),
     respondedAt: fromInputs(f.respondedDate, f.respondedTime),
     responded: f.responded === "" ? null : f.responded === "yes",
     outcome: f.outcome, editedAt: new Date(),
@@ -154,13 +173,13 @@ export function cellValue(row: InquiryRow, field: CellField): string {
     case "followUpDate": case "reminderDate": case "bookedDate": return toDateInput(row[field]);
     case "noShow": case "served": return row[field] ? "yes" : "no";
     case "revenue": return row.revenue ? String(row.revenue) : "";
-    case "action": return row.action || row.remarks;
+    case "action": return ""; // the cell adds a new step; earlier steps stay as they are
     default: return row[field];
   }
 }
 
 /** Applies one cell edit, keeping the rest of the row (and its identity) as it was. */
-export function applyEdit(row: InquiryRow, field: CellField, value: string): InquiryRow {
+export function applyEdit(row: InquiryRow, field: CellField, value: string, by = ""): InquiryRow {
   const next: InquiryRow = { ...row, editedAt: new Date() };
   const v = value.trim();
   switch (field) {
@@ -170,7 +189,7 @@ export function applyEdit(row: InquiryRow, field: CellField, value: string): Inq
       break;
     }
     case "time": next.date = fromInputs(toDateInput(row.date || new Date()), v); next.hasTime = Boolean(v); break;
-    case "channel": case "branch": next[field] = v || "Not recorded"; break;
+    case "channel": case "branch": next[field] = caps(v) || "Not recorded"; break;
     case "patientStatus": next.patientStatus = v === "New" || v === "Returning" ? v : ""; break;
     case "responded": next.responded = v === "yes"; break;
     case "followUpDate": next.followUpDate = fromInputs(v); next.followUp = next.followUpDate ? sheetDate(next.followUpDate) : ""; break;
@@ -190,8 +209,16 @@ export function applyEdit(row: InquiryRow, field: CellField, value: string): Inq
       next.outcome = undefined;
       break;
     case "revenue": next.revenue = Math.max(0, Number(v.replace(/[₱,\s]/g, "")) || 0); break;
-    case "action": next.action = v; next.remarks = v; next.outcome = row.outcome === "lost" || row.outcome === "cancelled" ? undefined : row.outcome; break;
-    default: next[field] = v;
+    case "action": {
+      if (!v) return row;
+      const steps = [...stepsOf(row), { text: caps(v), at: new Date(), by: caps(by) || "STAFF", outcome: leadState(row) }];
+      const lost = row.action.startsWith(LOST_PREFIX) ? row.action.split(". ")[0] : "";
+      next.actionLog = steps;
+      next.action = lost ? `${lost}. ${stepsText(steps)}` : stepsText(steps);
+      next.remarks = next.action;
+      break;
+    }
+    default: next[field] = caps(v);
   }
   if (!next.outcome) delete next.outcome;
   return next;

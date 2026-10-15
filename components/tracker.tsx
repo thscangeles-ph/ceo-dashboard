@@ -10,7 +10,7 @@ import { TrackerFiles } from "@/components/tracker-files";
 import { PdfButton } from "@/components/pdf-button";
 import { trackerReport } from "@/lib/reports";
 import type { CellField, NextStep, StepTone } from "@/lib/tracker";
-import { applyEdit, cellValue, exportTracker, nextStep, PAYMENT_MODES, STEP_LABEL } from "@/lib/tracker";
+import { applyEdit, cellValue, CHANNELS, exportTracker, nextStep, PAYMENT_MODES, STEP_LABEL, stepsOf, stepsText } from "@/lib/tracker";
 
 type Kind = "text" | "area" | "tel" | "date" | "time" | "yesno" | "patient" | "money";
 type Column = { field: CellField; label: string; kind: Kind; list?: string; show: (r: InquiryRow) => string; width?: number };
@@ -23,7 +23,7 @@ const COLUMNS: Column[] = [
   { field: "patientStatus", label: "New or Returning Patient", kind: "patient", show: (r) => dash(r.patientStatus) },
   { field: "date", label: "Date", kind: "date", show: (r) => day(r.date) },
   { field: "time", label: "Time", kind: "time", show: (r) => (r.hasTime && r.date ? r.date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "—") },
-  { field: "channel", label: "Channel / Source", kind: "text", list: "trk-channels", show: (r) => (r.channel === "Not recorded" ? "—" : r.channel) },
+  { field: "channel", label: "Channel", kind: "text", list: "trk-channels", show: (r) => (r.channel === "Not recorded" ? "—" : r.channel) },
   { field: "patient", label: "Name", kind: "text", show: (r) => dash(r.patient) },
   { field: "contact", label: "Contact Number", kind: "tel", show: (r) => dash(r.contact) },
   { field: "procedure", label: "Procedure / Test", kind: "text", list: "trk-procedures", show: (r) => dash(r.procedure) },
@@ -37,7 +37,7 @@ const COLUMNS: Column[] = [
   { field: "noShow", label: "No Show", kind: "yesno", show: (r) => (r.noShow ? "Yes" : "No") },
   { field: "served", label: "Served", kind: "yesno", show: (r) => (r.served ? "Yes" : "No") },
   { field: "revenue", label: "Revenue (Cost of Procedure)", kind: "money", show: (r) => (r.revenue ? `₱${Math.round(r.revenue).toLocaleString("en-PH")}` : "—") },
-  { field: "action", label: "Other Applicable Actions (Follow-up)", kind: "area", show: (r) => dash(r.action || r.remarks), width: 240 },
+  { field: "action", label: "Other Applicable Actions (Follow-up)", kind: "area", show: (r) => dash(stepsText(stepsOf(r))), width: 240 },
 ];
 
 type View = "all" | "action" | "overdue" | "notResponded" | "price" | "scheduled" | "complete";
@@ -58,7 +58,7 @@ const PAGE = 50;
  * columns, edited in place cell by cell, with a Next Step box that says what to do or Complete.
  * The CRM Dashboard is built from these rows.
  */
-export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, onOpen, initialSearch = "" }: {
+export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, onOpen, initialSearch = "", actor = "" }: {
   rows: InquiryRow[];
   sheets: SheetSummary[];
   busy: boolean;
@@ -66,6 +66,8 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
   onSave: (row: InquiryRow, base: InquiryRow) => void | Promise<void>;
   onAdd: () => void;
   onOpen: (row: InquiryRow) => void;
+  /** Who is signed in, recorded on each step added. */
+  actor?: string;
   initialSearch?: string;
 }) {
   const today = useMemo(() => new Date(), []);
@@ -88,7 +90,7 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
   const lists = useMemo(() => {
     const unique = (pick: (r: InquiryRow) => string, extra: string[] = []) => Array.from(new Set([...rows.map(pick), ...extra].filter((v) => v && v !== "Not recorded"))).sort();
     return {
-      "trk-channels": unique((r) => r.channel, ["Doctor's Referral", "Facebook Messenger", "Viber", "Call", "SMS", "Walk-in", "Google Search", "Website Inquiry", "Family/Relatives", "Friends", "Passed By"]),
+      "trk-channels": CHANNELS,
       "trk-procedures": unique((r) => r.procedure), "trk-branches": unique((r) => r.branch, ["Angeles", "Malolos"]), "trk-payments": unique((r) => r.payment, PAYMENT_MODES),
     };
   }, [rows]);
@@ -133,7 +135,7 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
     if (field === "patient" && !value.trim()) { setError("The name can't be empty."); return; }
     if (field === "date" && !value) { setError("The inquiry date can't be empty."); return; }
     setSaving(row.rowKey);
-    try { await onSave(applyEdit(row, field, value), row); } catch (e) { setError(e instanceof Error ? e.message : "Could not save. Try again."); }
+    try { await onSave(applyEdit(row, field, value, actor), row); } catch (e) { setError(e instanceof Error ? e.message : "Could not save. Try again."); }
     setSaving("");
   };
 
@@ -147,9 +149,10 @@ export function InquiryTracker({ rows, sheets, busy, onUpload, onSave, onAdd, on
       const options = col.kind === "yesno" ? [["yes", col.field === "responded" ? "YES" : "Yes"], ["no", col.field === "responded" ? "NO" : "No"]] : [["New", "New"], ["Returning", "Returning"], ["", "—"]];
       return <select {...common} value={draft} onBlur={cancel} onChange={(e) => void commit(row, col.field, e.target.value)}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
     }
-    if (col.kind === "area") return <textarea {...common} rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => void commit(row, col.field, draft)} />;
+    // Typing is kept in capitals, like the inquiry form. The action cell adds a new step; earlier steps stay.
+    if (col.kind === "area") return <textarea {...common} rows={3} value={draft} placeholder={col.field === "action" ? "ADD A STEP TAKEN…" : undefined} onChange={(e) => setDraft(e.target.value.toUpperCase())} onBlur={() => void commit(row, col.field, draft)} />;
     const type = col.kind === "date" ? "date" : col.kind === "time" ? "time" : col.kind === "tel" ? "tel" : "text";
-    return <input {...common} type={type} list={col.list} inputMode={col.kind === "money" ? "decimal" : undefined} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => void commit(row, col.field, draft)} />;
+    return <input {...common} type={type} list={col.list} inputMode={col.kind === "money" ? "decimal" : undefined} value={draft} onChange={(e) => setDraft(col.kind === "text" ? e.target.value.toUpperCase() : e.target.value)} onBlur={() => void commit(row, col.field, draft)} />;
   };
 
   return (
