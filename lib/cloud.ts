@@ -190,7 +190,8 @@ async function removeKeys(sb: SupabaseClient, table: string, keys: string[]) {
 export const deleteSales = (sb: SupabaseClient, keys: string[]) => removeKeys(sb, "sales_rows", keys);
 export const deleteSheets = (sb: SupabaseClient, keys: string[]) => removeKeys(sb, "sheets", keys);
 
-export type NewMember = { email: string; fullName: string; role: Role; method: "invite" | "password"; password?: string };
+/** A new login: always created with a password that the Admin, ManCom or Doctors account gives the person. */
+export type NewMember = { email: string; fullName: string; role: Role; password: string };
 /** Creates a login through the app's server (app/api/team), which holds the Supabase admin key. */
 export async function createMember(sb: SupabaseClient, member: NewMember) {
   const { data } = await sb.auth.getSession();
@@ -202,7 +203,7 @@ export async function createMember(sb: SupabaseClient, member: NewMember) {
   if (!response) throw new Error(friendly("Failed to fetch"));
   const result = (await response.json().catch(() => ({}))) as { error?: string; id?: string };
   if (!response.ok || !result.id) throw new Error(result.error || "Could not create the account.");
-  return result as { id: string; email: string; fullName: string; role: Role; invited: boolean };
+  return result as { id: string; email: string; fullName: string; role: Role };
 }
 
 /** An Admin, ManCom or Doctors account sets a temporary password for someone (their invite expired, or they're locked out). */

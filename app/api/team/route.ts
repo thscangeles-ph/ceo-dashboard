@@ -11,7 +11,7 @@ const ROLES = ["admin", "mancom", "doctor", "concierge", "marketing"] as const;
 /** Same full-access roles as lib/cloud.ts and public.full_access() in supabase/schema.sql. */
 const FULL_ACCESS: string[] = ["admin", "mancom", "doctor"];
 type Role = (typeof ROLES)[number];
-type Body = { email?: string; fullName?: string; role?: Role; method?: "invite" | "password"; password?: string };
+type Body = { email?: string; fullName?: string; role?: Role; password?: string };
 
 const KEY_HELP = (problem: string) =>
   `Setup problem: SUPABASE_SERVICE_ROLE_KEY in Vercel ${problem}. Copy the Secret key (sb_secret_…) or the legacy service_role key from the same Supabase project (Project Settings → API Keys), paste it into that variable in Vercel, then redeploy. Until then you can add people in Supabase → Authentication → Users and set their access here.`;
@@ -72,12 +72,10 @@ export async function POST(request: Request) {
   const role = body.role;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply(400, { error: "Enter a valid email address." });
   if (!role || !ROLES.includes(role)) return reply(400, { error: "Choose the account type." });
-  if (body.method === "password" && (body.password || "").length < 8) return reply(400, { error: "The temporary password needs at least 8 characters." });
+  // Logins are only created with a password set by the Admin, ManCom or Doctors account; no email invitations.
+  if ((body.password || "").length < 8) return reply(400, { error: "The password needs at least 8 characters." });
 
-  const origin = request.headers.get("origin") || new URL(request.url).origin;
-  const created = body.method === "password"
-    ? await admin.auth.admin.createUser({ email, password: body.password, email_confirm: true, user_metadata: { full_name: fullName } })
-    : await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName }, redirectTo: origin });
+  const created = await admin.auth.admin.createUser({ email, password: body.password, email_confirm: true, user_metadata: { full_name: fullName } });
   if (created.error || !created.data.user) {
     const message = created.error?.message || "Could not create the account.";
     return reply(/already|registered|exists/i.test(message) ? 409 : 400, { error: /already|registered|exists/i.test(message) ? "That email already has an account. Set its access in the list instead." : message });
@@ -87,5 +85,5 @@ export async function POST(request: Request) {
   const id = created.data.user.id;
   const { error: profileError } = await admin.from("profiles").upsert({ id, email, full_name: fullName, role }, { onConflict: "id" });
   if (profileError) return reply(500, { error: `The login was created but its access could not be set: ${profileError.message}` });
-  return reply(200, { id, email, fullName, role, invited: body.method !== "password" });
+  return reply(200, { id, email, fullName, role });
 }

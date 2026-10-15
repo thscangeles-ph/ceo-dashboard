@@ -168,8 +168,8 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
   const [people, setPeople] = useState<Profile[] | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState("");
-  // Temporary passwords are the default: Supabase's free email sender can't use scanner-proof invite links.
-  const [form, setForm] = useState<NewMember>(() => ({ email: "", fullName: "", role: "concierge", method: "password", password: generatePassword() }));
+  // People only get in when an Admin, ManCom or Doctors account creates their login with a password.
+  const [form, setForm] = useState<NewMember>(() => ({ email: "", fullName: "", role: "concierge", password: generatePassword() }));
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<{ text: string; password?: string } | null>(null);
   const [pwFor, setPwFor] = useState<string | null>(null);
@@ -225,9 +225,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
     setAdding(true); setError(""); setAdded(null);
     try {
       const result = await createMember(getCloud()!, form);
-      setAdded(result.invited
-        ? { text: `Invitation sent to ${result.email}. They set their own password from the email, then sign in as ${ROLE_LABEL[result.role]}.` }
-        : { text: `${result.email} can sign in now as ${ROLE_LABEL[result.role]}. Give them this password privately (not in a group chat):`, password: form.password });
+      setAdded({ text: `${result.email} can sign in now as ${ROLE_LABEL[result.role]}. Give them this password privately (not in a group chat):`, password: form.password });
       setForm((f) => ({ ...f, email: "", fullName: "", password: generatePassword() }));
       await reload();
     } catch (e) { setError((e as Error).message); }
@@ -257,20 +255,12 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
                   ))}
                 </div>
               </label>
-              <label className="full">How they get in
-                <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as NewMember["method"] })}>
-                  <option value="password">Set a password now (you give it to them yourself)</option>
-                  <option value="invite">Email an invitation (works best with your own email sender set up in Supabase)</option>
-                </select>
+              <label className="full">Password (you give it to them yourself)
+                <div className="pw-row" style={{ marginTop: 0 }}>
+                  <input type="text" minLength={8} required value={form.password} autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setForm({ ...form, password: generatePassword() })}>Generate</button>
+                </div>
               </label>
-              {form.method === "password" && (
-                <label className="full">Password
-                  <div className="pw-row" style={{ marginTop: 0 }}>
-                    <input type="text" minLength={8} required value={form.password} autoComplete="off" onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setForm({ ...form, password: generatePassword() })}>Generate</button>
-                  </div>
-                </label>
-              )}
             </div>
             {added && <div className="notice" role="status"><div>{added.text}{added.password && <div className="pw-show"><code>{added.password}</code><Copy text={added.password} /></div>}</div></div>}
             <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 14 }}><UserPlus size={15} />{adding ? "Creating…" : "Create account"}</button>
@@ -323,7 +313,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
               </table>
             </div>
           )}
-          <p className="drill-meta" style={{ marginTop: 12 }}>If an invite link expired or someone is locked out, use <strong>Set password</strong> and give them the new password privately. To remove someone, set them to <em>No access</em>. To delete a login completely, use Supabase → Authentication → Users.</p>
+          <p className="drill-meta" style={{ marginTop: 12 }}>If someone forgets their password or is locked out, use <strong>Set password</strong> and give them the new password privately. To remove someone, set them to <em>No access</em>. To delete a login completely, use Supabase → Authentication → Users.</p>
         </div>
       </aside>
     </div>
