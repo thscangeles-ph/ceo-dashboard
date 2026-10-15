@@ -34,45 +34,43 @@ export function LoadingScreen({ label = "Loading…" }: { label?: string }) {
 /** Plain-language text for a broken invite or reset link (Supabase sends error_code in the URL). */
 export function linkErrorText(code: string, description = "") {
   if (/otp_expired|expired|invalid/i.test(`${code} ${description}`)) {
-    return "This link has expired or was already used. Email apps sometimes open links automatically to scan them, which uses them up. Enter your email below to get a new link, or ask an Admin, ManCom or Doctors account to set a password for you in Team.";
+    return "This link has expired or was already used. Email apps sometimes open links automatically to scan them, which uses them up. Ask an Admin, ManCom or Doctors account to set a password for you in Team.";
   }
-  return `That link didn't work (${description || code}). Enter your email below to get a new one.`;
+  return `That link didn't work (${description || code}). Ask an Admin, ManCom or Doctors account to set a password for you in Team.`;
 }
 
+/**
+ * Sign-in. There is no "forgot password" here: passwords are given and reset only by an Admin, ManCom or
+ * Doctors account (Team → Set password).
+ */
 export function LoginScreen({ linkError }: { linkError?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"login" | "forgot">(linkError ? "forgot" : "login");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(linkError ? { tone: "error", text: linkError } : null);
+  const [message, setMessage] = useState<string | null>(linkError || null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const sb = getCloud();
     if (!sb) return;
     setBusy(true); setMessage(null);
-    if (mode === "login") {
-      const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) setMessage({ tone: "error", text: friendly(error.message) });
-    } else {
-      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin });
-      setMessage(error ? { tone: "error", text: friendly(error.message) } : { tone: "ok", text: "If that email has an account, a link to set a new password is on its way." });
-    }
+    const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) setMessage(friendly(error.message));
     setBusy(false);
   };
 
   return (
     <Shell>
       <span className="tag">THSC team sign-in</span>
-      <h1>{mode === "login" ? "Sign in" : "Reset your password"}</h1>
-      <p className="sub">{mode === "login" ? "Use the email and password the clinic gave you." : "Enter your email and we'll send a link to set a new password."}</p>
+      <h1>Sign in</h1>
+      <p className="sub">Use the email and password the clinic gave you.</p>
       {configProblem && <div className="alert" role="alert"><div>{configProblem}</div></div>}
       <form className="auth-form" onSubmit={submit}>
         <label>Email<div className="input-icon"><Mail size={16} aria-hidden /><input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div></label>
-        {mode === "login" && <label>Password<div className="input-icon"><KeyRound size={16} aria-hidden /><input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div></label>}
-        {message && <div className={message.tone === "error" ? "alert" : "notice"} role="status"><div>{message.text}</div></div>}
-        <button type="submit" className="btn btn-primary" disabled={busy}><LogIn size={16} />{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Send reset link"}</button>
-        <button type="button" className="link-btn" onClick={() => { setMode(mode === "login" ? "forgot" : "login"); setMessage(null); }}>{mode === "login" ? "Forgot your password?" : "Back to sign in"}</button>
+        <label>Password<div className="input-icon"><KeyRound size={16} aria-hidden /><input type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></div></label>
+        {message && <div className="alert" role="status"><div>{message}</div></div>}
+        <button type="submit" className="btn btn-primary" disabled={busy}><LogIn size={16} />{busy ? "Please wait…" : "Sign in"}</button>
+        <p className="empty-note" style={{ margin: 0 }}>Forgot your password? Ask an Admin, ManCom or Doctors account to set a new one for you.</p>
       </form>
       <p className="privacy"><ShieldCheck size={17} /><span>Patient information is only shown to signed-in clinic staff. Sign out on shared computers.</span></p>
     </Shell>
@@ -195,7 +193,7 @@ export function TeamPanel({ me, onClose }: { me: string; onClose: () => void }) 
     setSaving(person.id); setError(""); setPwDone(null);
     try {
       await setMemberPassword(getCloud()!, person.id, newPw);
-      setPwDone({ text: `${person.email} can now sign in with this password. Give it to them privately; they can change it later with Forgot your password?`, password: newPw });
+      setPwDone({ text: `${person.email} can now sign in with this password. Give it to them privately. If they forget it, set a new one here.`, password: newPw });
       setPwFor(null); setNewPw("");
     } catch (e) { setError((e as Error).message); }
     setSaving("");

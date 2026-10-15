@@ -225,11 +225,11 @@ export async function deleteInquiry(sb: SupabaseClient, key: string) {
 
 /** Plain-language versions of the errors staff are most likely to hit. */
 export function friendly(message: string) {
-  if (/invalid login credentials/i.test(message)) return "Wrong email or password.";
+  if (/invalid login credentials/i.test(message)) return "Wrong email or password. If you forgot your password, ask an Admin, ManCom or Doctors account to set a new one.";
   if (/invalid api key|no api key|apikey/i.test(message)) return "Setup problem: the app's Supabase key is wrong (Invalid API key). In Vercel → Settings → Environment Variables, set NEXT_PUBLIC_SUPABASE_ANON_KEY to the Publishable (anon) key from the same Supabase project as NEXT_PUBLIC_SUPABASE_URL, then redeploy.";
   // Supabase's built-in email sender only sends a few emails an hour, and only to the project team's addresses.
-  if (/error sending .*email|email rate limit|over_email_send_rate_limit|email address not authorized/i.test(message)) return "The reset email couldn't be sent: the clinic's email sender is limited (a few emails an hour, only to approved addresses). Ask an Admin, ManCom or Doctors account to open Team → Set password for you, or try again in an hour.";
-  if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask the admin to confirm the user in Supabase.";
+  if (/error sending .*email|email rate limit|over_email_send_rate_limit|email address not authorized/i.test(message)) return "The email couldn't be sent: the clinic's email sender is limited (a few emails an hour, only to approved addresses). Use Team → Set password instead.";
+  if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask an Admin, ManCom or Doctors account to set a password for you in Team.";
   if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask an Admin, ManCom or Doctors account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";
   if (/failed to fetch|network/i.test(message)) return "Can't reach the server. Check the internet connection and try again.";
