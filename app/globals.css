@@ -321,6 +321,9 @@ table.trk { width: max-content; min-width: 100%; border-collapse: separate; bord
 .editor-grid .field-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .editor-grid .field-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .editor-grid .field-grid.two .wide { grid-column: span 1; }
+.req { color: #c0262d; font-weight: 700; margin-left: 3px; }
+.editor-grid label.invalid > span:first-child, .steps-log h4.invalid { color: #c0262d; }
+.editor-grid label.invalid input, .editor-grid label.invalid select, .editor-grid label.invalid textarea { border-color: #c0262d; box-shadow: 0 0 0 1px #c0262d inset; background: #fff6f6; }
 .step-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: var(--primary-ink); font-size: .72rem; }
 .editor-grid .field-grid input:not([type=date]):not([type=time]), .editor-grid .field-grid textarea, .step-add textarea { text-transform: uppercase; }
 .outcome-list { display: grid; gap: 6px; margin-bottom: 8px; }

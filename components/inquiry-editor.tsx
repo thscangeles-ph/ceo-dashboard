@@ -26,6 +26,17 @@ const OUTCOME_HELP: Record<LeadState, string> = {
   noShow: "Booked but did not come. Set when to call back.",
 };
 const BOOKED: LeadState[] = ["booked", "served", "noShow", "cancelled"];
+const filled = (value: string) => value.trim().length > 0;
+
+/** A form box whose label shows a red asterisk while it is empty, and turns red if saving was tried with it empty. */
+function Field({ label, ok, tried, className, children }: { label: string; ok: boolean; tried: boolean; className?: string; children: React.ReactNode }) {
+  return (
+    <label className={[className, tried && !ok ? "invalid" : ""].filter(Boolean).join(" ") || undefined}>
+      <span>{label}{!ok && <span className="req" aria-label="required">*</span>}</span>
+      {children}
+    </label>
+  );
+}
 const stamp = (d: Date) => d.toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 
 /**
@@ -45,6 +56,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
   const [savedCount, setSavedCount] = useState(form.steps.length); // steps already saved; the rest were added in this form
   const [otherChannel, setOtherChannel] = useState(() => Boolean(form.channel) && !CHANNELS.includes(form.channel));
   const [newStep, setNewStep] = useState("");
+  const [tried, setTried] = useState(false); // saving was attempted: empty boxes turn red
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   // Saving can fail when accounts are on (no connection, no access); keep the form open with the reason.
@@ -56,7 +68,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
   const firstRef = useRef<HTMLInputElement>(null);
   const options = useMemo(() => {
     const unique = (pick: (r: InquiryRow) => string, extra: string[] = []) => Array.from(new Set([...rows.map(pick), ...extra].map((v) => caps(v || "")).filter((v) => v && v !== "NOT RECORDED"))).sort();
-    return { branches: unique((r) => r.branch, ["ANGELES", "MALOLOS"]), procedures: unique((r) => r.procedure), staff: unique((r) => r.staff), referrers: unique((r) => r.referredBy) };
+    return { branches: unique((r) => r.branch, ["ANGELES", "MALOLOS"]), procedures: unique((r) => r.procedure), staff: unique((r) => r.staff) };
   }, [rows]);
 
   useEffect(() => {
@@ -73,7 +85,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
     ({ value: form[key], autoComplete: "off", onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, caps(e.target.value)) });
   // Any outcome past Open lead means staff already replied, so Responded turns to YES (it can still be changed).
   const setOutcome = (outcome: LeadState) => setForm((f) => ({
-    ...f, outcome, responded: outcome === "open" ? f.responded : "yes",
+    ...f, outcome,
     bookedDate: BOOKED.includes(outcome) && !f.bookedDate ? toDateInput(new Date()) : f.bookedDate,
     followUpDate: (outcome === "open" || outcome === "noShow") && !f.followUpDate ? tomorrowInput() : f.followUpDate,
   }));
@@ -93,15 +105,30 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
     if (saved) setSavedCount((n) => n - 1);
   };
 
+  // Every box shown must be filled before the inquiry can be saved.
+  const replied = form.responded === "yes";
+  const needsSteps = showStepBox;
+  const checks: [string, boolean][] = [
+    ["Handled by (staff)", filled(form.staff)],
+    ...(replied ? [["First reply date", filled(form.respondedDate)], ["First reply time", filled(form.respondedTime)]] as [string, boolean][] : []),
+    ["New or returning", filled(form.patientStatus)], ["Date", filled(form.date)], ["Time", filled(form.time)],
+    [otherChannel ? "Other channel" : "Channel", filled(form.channel)], ["Name", filled(form.patient)], ["Contact number", filled(form.contact)],
+    ["Branch", filled(form.branch)], ["Procedure / test", filled(form.procedure)], ["Inquired", filled(form.inquired)],
+    ...((form.outcome === "open" || form.outcome === "noShow") ? [["Follow up on", filled(form.followUpDate)]] as [string, boolean][] : []),
+    ...(booked ? [["Booked on", filled(form.bookedDate)], ["Appointment date", filled(form.appointmentDate)], ["Reminder date", filled(form.reminderDate)], ["Reminder via", filled(form.reminderMethod)]] as [string, boolean][] : []),
+    ...(form.outcome === "served" ? [["Revenue", filled(form.revenue)], ["Mode of payment", filled(form.payment)]] as [string, boolean][] : []),
+    ...(form.outcome === "lost" ? [["Reason lost", filled(form.lostReason)]] as [string, boolean][] : []),
+    ...(needsSteps ? [["Actions / steps taken (at least one)", form.steps.length > 0 || filled(newStep)]] as [string, boolean][] : []),
+  ];
+  const missing = checks.filter(([, ok]) => !ok).map(([label]) => label);
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.patient.trim()) { setError("Enter the patient's name."); return; }
-    if (!form.date) { setError("Enter the inquiry date."); return; }
-    if (otherChannel && !form.channel.trim()) { setError("Type the channel, or choose one from the list."); return; }
-    if (form.outcome === "lost" && !form.lostReason && !form.steps.length && !newStep.trim()) { setError("Choose why the lead was lost."); return; }
+    setTried(true);
+    if (missing.length) { setError(`Fill in every box before saving. Still empty: ${missing.join(", ")}.`); return; }
     // A step typed but not yet added is kept too.
     const pending = newStep.trim() && showStepBox ? [{ text: caps(newStep.trim()), at: new Date(), by: caps(actor) || "STAFF", outcome: form.outcome }] : [];
-    const final = { ...form, steps: [...form.steps, ...pending] };
+    const final = { ...form, steps: [...form.steps, ...pending], respondedDate: replied ? form.respondedDate : "", respondedTime: replied ? form.respondedTime : "" };
     void attempt(() => onSave(rowFromForm(final, row || undefined), row || undefined));
   };
 
@@ -114,7 +141,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
           <div>
             <span className="tag">{isNew ? "New inquiry" : "Update inquiry"}</span>
             <h2 id="editor-title">{isNew ? "Add a patient inquiry" : form.patient || "Inquiry"}</h2>
-            <p className="drill-meta">{cloudConfigured ? "Saved to the shared database for the whole team." : "Saved on this device right away."} Typing is kept in capitals.</p>
+            <p className="drill-meta">{cloudConfigured ? "Saved to the shared database for the whole team." : "Saved on this device right away."} Typing is kept in capitals. Every box is required; empty ones show a red <span className="req">*</span>.</p>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={20} /></button>
         </div>
@@ -124,20 +151,19 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
               <fieldset>
                 <legend><span className="step-n">1</span>Tracking</legend>
                 <div className="field-grid">
-                  <label className="wide">Handled by (staff)<input ref={firstRef} list="ed-staff" placeholder="YOUR NAME" {...text("staff")} /></label>
-                  <label>Responded<select value={form.responded} onChange={(e) => set("responded", e.target.value as InquiryForm["responded"])}><option value="yes">YES, WE REPLIED</option><option value="no">NO, NOT YET</option></select></label>
-                  <label>First reply date<input type="date" value={form.respondedDate} onChange={(e) => set("respondedDate", e.target.value)} /></label>
-                  <label>First reply time<input type="time" value={form.respondedTime} onChange={(e) => set("respondedTime", e.target.value)} /></label>
-                  <label className="wide">Referred by<input list="ed-referrers" placeholder="DOCTOR, CLINIC OR COMPANY" {...text("referredBy")} /></label>
+                  <Field label="Handled by (staff)" ok={filled(form.staff)} tried={tried} className="wide"><input ref={firstRef} list="ed-staff" placeholder="YOUR NAME" {...text("staff")} /></Field>
+                  <Field label="Responded" ok={true} tried={tried}><select value={form.responded} onChange={(e) => set("responded", e.target.value as InquiryForm["responded"])}><option value="no">NO, NOT YET</option><option value="yes">YES, WE REPLIED</option></select></Field>
+                  {replied && <Field label="First reply date" ok={filled(form.respondedDate)} tried={tried}><input type="date" value={form.respondedDate} onChange={(e) => set("respondedDate", e.target.value)} /></Field>}
+                  {replied && <Field label="First reply time" ok={filled(form.respondedTime)} tried={tried}><input type="time" value={form.respondedTime} onChange={(e) => set("respondedTime", e.target.value)} /></Field>}
                 </div>
               </fieldset>
               <fieldset>
                 <legend><span className="step-n">2</span>Inquiry</legend>
                 <div className="field-grid">
-                  <label>New or returning<select value={form.patientStatus} onChange={(e) => set("patientStatus", e.target.value as InquiryForm["patientStatus"])}><option value="New">NEW</option><option value="Returning">RETURNING</option><option value="">NOT RECORDED</option></select></label>
-                  <label>Date<input type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} /></label>
-                  <label>Time<input type="time" value={form.time} onChange={(e) => set("time", e.target.value)} /></label>
-                  <label>Channel
+                  <Field label="New or returning" ok={filled(form.patientStatus)} tried={tried}><select value={form.patientStatus} onChange={(e) => set("patientStatus", e.target.value as InquiryForm["patientStatus"])}><option value="" disabled>CHOOSE…</option><option value="New">NEW</option><option value="Returning">RETURNING</option></select></Field>
+                  <Field label="Date" ok={filled(form.date)} tried={tried}><input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} /></Field>
+                  <Field label="Time" ok={filled(form.time)} tried={tried}><input type="time" value={form.time} onChange={(e) => set("time", e.target.value)} /></Field>
+                  <Field label="Channel" ok={otherChannel || filled(form.channel)} tried={tried}>
                     <select value={otherChannel ? "OTHERS" : form.channel} onChange={(e) => {
                       if (e.target.value === "OTHERS") { setOtherChannel(true); set("channel", ""); } else { setOtherChannel(false); set("channel", e.target.value); }
                     }}>
@@ -145,13 +171,13 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
                       {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
                       <option value="OTHERS">OTHERS</option>
                     </select>
-                  </label>
-                  {otherChannel && <label className="wide">Other channel<input placeholder="TYPE THE CHANNEL" {...text("channel")} /></label>}
-                  <label className="wide">Name<input required {...text("patient")} /></label>
-                  <label>Contact number<input type="tel" placeholder="09XX-XXX-XXXX" {...text("contact")} /></label>
-                  <label>Branch<input list="ed-branches" {...text("branch")} /></label>
-                  <label className="wide">Procedure / test<input list="ed-procedures" {...text("procedure")} /></label>
-                  <label className="full">Inquired (what the patient asked)<textarea rows={3} {...text("inquired")} /></label>
+                  </Field>
+                  {otherChannel && <Field label="Other channel" ok={filled(form.channel)} tried={tried} className="wide"><input placeholder="TYPE THE CHANNEL" {...text("channel")} /></Field>}
+                  <Field label="Name" ok={filled(form.patient)} tried={tried} className="wide"><input {...text("patient")} /></Field>
+                  <Field label="Contact number" ok={filled(form.contact)} tried={tried}><input type="tel" placeholder="09XX-XXX-XXXX" {...text("contact")} /></Field>
+                  <Field label="Branch" ok={filled(form.branch)} tried={tried}><input list="ed-branches" {...text("branch")} /></Field>
+                  <Field label="Procedure / test" ok={filled(form.procedure)} tried={tried} className="wide"><input list="ed-procedures" {...text("procedure")} /></Field>
+                  <Field label="Inquired (what the patient asked)" ok={filled(form.inquired)} tried={tried} className="full"><textarea rows={3} {...text("inquired")} /></Field>
                 </div>
               </fieldset>
             </div>
@@ -172,19 +198,19 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
                 </div>
                 <p className="drill-meta">{OUTCOME_HELP[form.outcome]}</p>
                 <div className="field-grid two">
-                  {(form.outcome === "open" || form.outcome === "noShow") && <label>Follow up on<input type="date" value={form.followUpDate} onChange={(e) => set("followUpDate", e.target.value)} /></label>}
-                  {booked && <label>Booked on<input type="date" value={form.bookedDate} onChange={(e) => set("bookedDate", e.target.value)} /></label>}
-                  {booked && <label>Appointment date<input type="date" value={form.appointmentDate} onChange={(e) => set("appointmentDate", e.target.value)} /></label>}
-                  {booked && <label>Reminder sent on<input type="date" value={form.reminderDate} onChange={(e) => set("reminderDate", e.target.value)} /></label>}
-                  {booked && <label>Reminder via<input list="ed-reminders" {...text("reminderMethod")} /></label>}
-                  {form.outcome === "served" && <label>Revenue (₱)<input inputMode="decimal" value={form.revenue} placeholder="0" onChange={(e) => set("revenue", e.target.value)} /></label>}
-                  {form.outcome === "served" && <label>Mode of payment<input list="ed-payments" {...text("payment")} /></label>}
-                  {form.outcome === "lost" && <label className="full">Reason lost<select value={form.lostReason} onChange={(e) => set("lostReason", e.target.value)}><option value="">CHOOSE…</option>{LOST_REASONS.map((r) => <option key={r}>{r}</option>)}</select></label>}
+                  {(form.outcome === "open" || form.outcome === "noShow") && <Field label="Follow up on" ok={filled(form.followUpDate)} tried={tried}><input type="date" value={form.followUpDate} onChange={(e) => set("followUpDate", e.target.value)} /></Field>}
+                  {booked && <Field label="Booked on" ok={filled(form.bookedDate)} tried={tried}><input type="date" value={form.bookedDate} onChange={(e) => set("bookedDate", e.target.value)} /></Field>}
+                  {booked && <Field label="Appointment date" ok={filled(form.appointmentDate)} tried={tried}><input type="date" value={form.appointmentDate} onChange={(e) => set("appointmentDate", e.target.value)} /></Field>}
+                  {booked && <Field label="Reminder date (sent or planned)" ok={filled(form.reminderDate)} tried={tried}><input type="date" value={form.reminderDate} onChange={(e) => set("reminderDate", e.target.value)} /></Field>}
+                  {booked && <Field label="Reminder via" ok={filled(form.reminderMethod)} tried={tried}><input list="ed-reminders" {...text("reminderMethod")} /></Field>}
+                  {form.outcome === "served" && <Field label="Revenue (₱)" ok={filled(form.revenue)} tried={tried}><input inputMode="decimal" value={form.revenue} placeholder="0" onChange={(e) => set("revenue", e.target.value)} /></Field>}
+                  {form.outcome === "served" && <Field label="Mode of payment" ok={filled(form.payment)} tried={tried}><input list="ed-payments" {...text("payment")} /></Field>}
+                  {form.outcome === "lost" && <Field label="Reason lost" ok={filled(form.lostReason)} tried={tried} className="full"><select value={form.lostReason} onChange={(e) => set("lostReason", e.target.value)}><option value="">CHOOSE…</option>{LOST_REASONS.map((r) => <option key={r}>{r}</option>)}</select></Field>}
                 </div>
 
                 {(showStepBox || form.steps.length > 0) && (
                   <div className="steps-log">
-                    <h4>Actions / steps taken</h4>
+                    <h4 className={tried && showStepBox && !form.steps.length && !filled(newStep) ? "invalid" : undefined}>Actions / steps taken{showStepBox && !form.steps.length && !filled(newStep) && <span className="req" aria-label="required">*</span>}</h4>
                     {form.steps.length ? (
                       <ol>
                         {form.steps.map((step, i) => (
@@ -217,7 +243,7 @@ export function InquiryEditor({ row, isNew, rows, onSave, onDelete, onClose, act
           {list("ed-payments", PAYMENT_MODES)}
           {list("ed-reminders", ["SMS REMINDER", "CALL REMINDER", "VIBER REMINDER", "MESSENGER REMINDER"])}
           {list("ed-staff", options.staff)}
-          {list("ed-referrers", options.referrers)}
+          
 
           <div className="modal-foot">
             {error && <div className="alert" role="alert"><div>{error}</div></div>}
