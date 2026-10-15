@@ -47,11 +47,11 @@ export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", mancom: "ManCo
 export const FULL_ACCESS: Role[] = ["admin", "mancom", "doctor"];
 export const isFullAccess = (role: Role | null | undefined) => Boolean(role && FULL_ACCESS.includes(role));
 export const ROLE_DETAIL: Record<Role, string> = {
-  admin: "Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker and Team",
+  admin: "Everything: own Sales Dashboard, Patient Acquisition Cost, CRM, Inquiry Tracker and Team",
   mancom: "Everything, same as Admin",
   doctor: "Everything, same as Admin",
   concierge: "Inquiry Tracker (add and update inquiries) and CRM Dashboard, with names and numbers",
-  marketing: "Read-only Sales and CRM Dashboards, patient details hidden",
+  marketing: "Own Sales Dashboard; read-only Patient Acquisition Cost and CRM, patient details hidden",
 };
 export type Profile = { id: string; email: string; full_name: string; role: Role | null };
 // Earlier versions called concierge accounts "staff".
@@ -76,7 +76,7 @@ export async function setProfileRole(sb: SupabaseClient, id: string, role: Role 
 
 // Dates travel as ISO strings inside jsonb; turn them back into Date objects.
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-function revive<T>(value: unknown): T {
+export function revive<T>(value: unknown): T {
   if (Array.isArray(value)) return value.map(revive) as T;
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, typeof v === "string" && ISO.test(v) ? new Date(v) : revive(v)])) as T;
@@ -95,18 +95,61 @@ async function fetchAll<T>(sb: SupabaseClient, table: string): Promise<T[]> {
   }
 }
 
-/** Everything the signed-in person is allowed to see. Concierge get the CRM; Marketing get de-identified views. */
-export async function loadCloud(sb: SupabaseClient, role: Role) {
+/** The shared inquiries (Inquiry Tracker and CRM), for the live refresh. */
+export const loadInquiries = (sb: SupabaseClient, role: Role) => fetchAll<InquiryRow>(sb, role === "marketing" ? "inquiries_marketing" : "inquiries");
+
+/** This account's own Sales Dashboard files (personal_sales; nobody else can read them). */
+async function loadPersonal(sb: SupabaseClient, userId: string) {
+  const rows: SalesRow[] = [], sheets: SheetSummary[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from("personal_sales").select("kind, data").eq("owner", userId).order("key").range(from, from + PAGE - 1);
+    if (error) {
+      // The table arrives with the updated supabase/schema.sql; until then the Sales Dashboard just starts empty.
+      if (/does not exist|could not find the table/i.test(error.message)) return { rows, sheets, missing: true };
+      throw new Error(friendly(error.message));
+    }
+    (data || []).forEach((r: { kind: string; data: unknown }) => { if (r.kind === "sheet") sheets.push(revive<SheetSummary>(r.data)); else rows.push(revive<SalesRow>(r.data)); });
+    if (!data || data.length < PAGE) return { rows, sheets, missing: false };
+  }
+}
+
+/**
+ * Everything the signed-in person can see: the shared inquiries, the team's shared sales reports and
+ * marketing spend (Patient Acquisition Cost), and their own Sales Dashboard files. Concierge get the CRM
+ * only; Marketing get de-identified views of the shared data.
+ */
+export async function loadCloud(sb: SupabaseClient, role: Role, userId: string) {
   const marketing = role === "marketing";
-  const [inquiries, sales, sheetRows] = await Promise.all([
-    fetchAll<InquiryRow>(sb, marketing ? "inquiries_marketing" : "inquiries"),
+  const [inquiries, teamSales, sheetRows, personal] = await Promise.all([
+    loadInquiries(sb, role),
     role === "concierge" ? Promise.resolve([] as SalesRow[]) : fetchAll<SalesRow>(sb, marketing ? "sales_marketing" : "sales_rows"),
     fetchAll<SheetSummary | SpendRecord>(sb, "sheets"),
+    role === "concierge" ? Promise.resolve({ rows: [] as SalesRow[], sheets: [] as SheetSummary[], missing: false }) : loadPersonal(sb, userId),
   ]);
   const isSpend = (r: SheetSummary | SpendRecord): r is SpendRecord => "setting" in r && r.setting === "acquisition-spend";
   const sheets = sheetRows.filter((r): r is SheetSummary => !isSpend(r));
   const spends: AcquisitionSpend[] = sheetRows.filter(isSpend).map((r) => ({ from: r.from, to: r.to, total: r.total, bySource: r.bySource, updatedAt: r.updatedAt }));
-  return { inquiries, sales, sheets, spends };
+  return { inquiries, teamSales, sheets, spends, mySales: personal.rows, mySheets: personal.sheets, personalMissing: personal.missing };
+}
+
+/** Saves this account's own Sales Dashboard rows and file list. */
+export async function savePersonal(sb: SupabaseClient, userId: string, input: { rows?: SalesRow[]; sheets?: SheetSummary[] }) {
+  const all = [
+    ...(input.rows || []).map((r) => ({ owner: userId, key: `row|${r.rowKey}`, kind: "row", data: r })),
+    ...(input.sheets || []).map((s) => ({ owner: userId, key: `sheet|${sheetKey(s)}`, kind: "sheet", data: s })),
+  ];
+  const rows = Array.from(new Map(all.map((r) => [r.key, r])).values());
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await sb.from("personal_sales").upsert(rows.slice(i, i + 500), { onConflict: "owner,key" });
+    if (error) throw new Error(/does not exist|could not find the table/i.test(error.message) ? "Personal Sales Dashboards need the updated database setup: run supabase/schema.sql in the Supabase SQL Editor, then try again." : friendly(error.message));
+  }
+}
+export async function deletePersonal(sb: SupabaseClient, userId: string, input: { rowKeys?: string[]; sheets?: SheetSummary[] }) {
+  const keys = [...(input.rowKeys || []).map((k) => `row|${k}`), ...(input.sheets || []).map((s) => `sheet|${sheetKey(s)}`)];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { error } = await sb.from("personal_sales").delete().eq("owner", userId).in("key", keys.slice(i, i + 100));
+    if (error) throw new Error(friendly(error.message));
+  }
 }
 
 async function upsert(sb: SupabaseClient, table: string, input: { key: string; data: unknown; kind?: string }[]) {

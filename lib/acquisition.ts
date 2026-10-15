@@ -33,6 +33,8 @@ export const ACQ_TYPES: { key: Exclude<PatientTypeFilter, "all">; label: string;
   { key: "trial", label: "CLINICAL TRIAL", includes: "Clinical trial patients" },
 ];
 
+/** Visits in date order; same-time visits by row key, so results never depend on the order rows were loaded in. */
+export const visitOrder = (x: SalesRow, y: SalesRow) => (x.date?.getTime() || 0) - (y.date?.getTime() || 0) || (x.rowKey < y.rowKey ? -1 : x.rowKey > y.rowKey ? 1 : 0);
 const visitKey = (r: SalesRow) => r.transaction || `${r.patient}|${r.date ? r.date.toDateString() : ""}`;
 
 function summarize(rows: SalesRow[]) {
@@ -54,14 +56,16 @@ export function analyzeAcquisition(all: SalesRow[], f: AcquisitionFilters) {
     const s = summarize(rows);
     // Each patient counts once, under the type of their first visit in the range, so the parts add up to the total.
     const firstType = new Map<string, string>();
-    [...rows].sort((x, y) => (x.date?.getTime() || 0) - (y.date?.getTime() || 0)).forEach((r) => { if (!firstType.has(r.patient)) firstType.set(r.patient, r.patientType); });
+    // Same-time visits are ordered by row key, so every account gets the same split whatever order the rows loaded in.
+    [...rows].sort(visitOrder).forEach((r) => { if (!firstType.has(r.patient)) firstType.set(r.patient, r.patientType); });
     const parts = t.parts?.map((p) => ({ label: p.label, optional: p.optional, patients: Array.from(firstType.values()).filter((raw) => p.test(raw)).length }))
       .filter((p) => !p.optional || p.patients > 0);
     return { ...t, ...s, parts };
   });
 
   // New patients and the source each one gave first, with all of their revenue in the range.
-  const newRows = base.filter((r) => typeGroup(r.patientType) === "new");
+  // In visit order (row key for same-time visits), so "first source" is the same for everyone.
+  const newRows = base.filter((r) => typeGroup(r.patientType) === "new").sort(visitOrder);
   const people = new Map<string, { source: string; revenue: number }>();
   for (const r of newRows) {
     const p = people.get(r.patient) || { source: "", revenue: 0 };

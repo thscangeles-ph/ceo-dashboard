@@ -35,9 +35,11 @@ function SpendInput({ value, label, disabled, onCommit, wide = false }: { value:
  * The Patient Acquisition Cost tab: what it costs to bring in each new patient, from the uploaded sales
  * reports and the marketing spend entered here (saved per date range, shared with the team).
  */
-export function AcquisitionDashboard({ rows, spends, canEdit, onSaveSpend, onAddSales }: {
+export function AcquisitionDashboard({ rows, spends, canEdit, onSaveSpend, onAddSales, files }: {
   rows: SalesRow[]; spends: AcquisitionSpend[]; canEdit: boolean;
   onSaveSpend: (spend: AcquisitionSpend) => Promise<void>; onAddSales?: () => void;
+  /** The team's sales report files panel. */
+  files?: React.ReactNode;
 }) {
   const drill = useDrill();
   const hasPaid = useMemo(() => rows.some((r) => isPaid(r.status)), [rows]);
@@ -88,10 +90,12 @@ export function AcquisitionDashboard({ rows, spends, canEdit, onSaveSpend, onAdd
         </div>
       </header>
 
-      {!rows.length ? (
+      {files}
+
+      {!rows.length ? (files ? null :
         <div className="panel empty-tab">
           <h3><FileSpreadsheet size={16} />No sales report added yet</h3>
-          <p className="empty-note">Acquisition cost is worked out from the Detailed Sales Report. {onAddSales ? "Add it here or on the Sales Dashboard, then enter the marketing spend." : "An Admin, ManCom or Doctors account adds it."}</p>
+          <p className="empty-note">Acquisition cost is worked out from the Detailed Sales Report. {onAddSales ? "Add the team's sales report here, then enter the marketing spend." : "An Admin, ManCom or Doctors account adds it."}</p>
           {onAddSales && <button type="button" className="btn btn-primary" style={{ marginTop: 14 }} onClick={onAddSales}><Plus size={16} />Add sales report</button>}
         </div>
       ) : (

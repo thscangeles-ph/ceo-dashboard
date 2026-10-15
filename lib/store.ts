@@ -5,7 +5,27 @@ import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
  * or closing the app. Nothing leaves the device. Every call fails quietly: private windows and
  * blocked storage simply behave like the app did before (data cleared on close).
  */
-export type Workspace = { version: 1; savedAt: Date; sales: SalesRow[]; inquiries: InquiryRow[]; sheets: SheetSummary[] };
+export type Workspace = {
+  version: 1; savedAt: Date;
+  /** The Sales Dashboard's own files (with accounts: each person's own). */
+  sales: SalesRow[];
+  inquiries: InquiryRow[];
+  /** Tracker files and the team's sales report files (Patient Acquisition Cost). Older saves also held the Sales Dashboard's files here. */
+  sheets: SheetSummary[];
+  mySheets?: SheetSummary[];
+  /** The team's sales reports behind Patient Acquisition Cost. */
+  teamSales?: SalesRow[];
+};
+
+/** Reads a saved workspace, moving data saved before the Sales Dashboard and Patient Acquisition Cost had separate files. */
+export function splitWorkspace(w: Workspace) {
+  const legacy = !w.mySheets;
+  return {
+    sales: w.sales, inquiries: w.inquiries, teamSales: w.teamSales || [],
+    mySheets: legacy ? w.sheets.filter((s) => s.kind === "sales") : w.mySheets!,
+    sheets: legacy ? w.sheets.filter((s) => s.kind !== "sales") : w.sheets,
+  };
+}
 
 const DB = "thsc-ceo-dashboard"; // kept from the app's first name so data already saved on devices is still found
 const STORE = "workspace";

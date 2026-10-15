@@ -12,9 +12,11 @@ const added = (d?: Date) => (d ? d.toLocaleDateString("en-PH", { month: "short",
  * The sales report files behind the Sales Dashboard, each removable on its own. Removing a file
  * deletes only the rows no other uploaded file also contains.
  */
-export function SalesFiles({ sheets, rows, busy, onAdd, onRemove }: {
+export function SalesFiles({ sheets, rows, busy, onAdd, onRemove, heading = "Sales report files", scope, readOnly = false, children }: {
   sheets: SheetSummary[]; rows: SalesRow[]; busy: boolean;
   onAdd: () => void; onRemove: (targets: SheetSummary[]) => void;
+  /** Title when files are listed, and a line saying who sees them. */
+  heading?: string; scope?: string; readOnly?: boolean; children?: React.ReactNode;
 }) {
   const files = sheets.filter((s) => s.kind === "sales");
   const legacy = files.filter((s) => !s.id);
@@ -46,9 +48,10 @@ export function SalesFiles({ sheets, rows, busy, onAdd, onRemove }: {
   return (
     <section className="panel files-panel no-print" aria-label="Sales report files">
       <div className="queue-head">
-        <h3><FileSpreadsheet size={16} />{files.length ? "Sales report files" : "No sales report added yet"}</h3>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onAdd} disabled={busy}><Plus size={14} />{busy ? "Working…" : "Add sales report"}</button>
+        <h3><FileSpreadsheet size={16} />{files.length ? heading : "No sales report added yet"}</h3>
+        {!readOnly && <button type="button" className="btn btn-primary btn-sm" onClick={onAdd} disabled={busy}><Plus size={14} />{busy ? "Working…" : "Add sales report"}</button>}
       </div>
+      {scope && <p className="drill-meta" style={{ marginTop: -4 }}>{scope}</p>}
       {files.length ? (
         <ul className="file-list">
           {files.map((sheet) => {
@@ -62,15 +65,18 @@ export function SalesFiles({ sheets, rows, busy, onAdd, onRemove }: {
                   <strong>{sheet.file}</strong>
                   <small>{[sheet.sheet, `${count(rowCount)} rows`, range, sheet.uploadedAt ? `added ${added(sheet.uploadedAt)}` : "added earlier"].filter(Boolean).join(" · ")}</small>
                 </div>
-                <button type="button" className="btn btn-outline btn-sm danger" disabled={busy} onClick={() => remove(sheet)} aria-label={`Remove ${sheet.file}`}><Trash2 size={14} />Remove</button>
+                {!readOnly && <button type="button" className="btn btn-outline btn-sm danger" disabled={busy} onClick={() => remove(sheet)} aria-label={`Remove ${sheet.file}`}><Trash2 size={14} />Remove</button>}
               </li>
             );
           })}
         </ul>
       ) : (
         <>
-          <p className="empty-note">Click <strong>Add sales report</strong> and choose the Detailed Sales Report export (or drag it onto the page) to see revenue, patient types, sources and physicians here. It needs the columns <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>.</p>
-          <button type="button" className="btn btn-outline btn-sm" style={{ margin: "12px 0" }} onClick={downloadTemplate}><Download size={14} />Download template</button>
+          {readOnly
+            ? <p className="empty-note">An Admin, ManCom or Doctors account adds these files.</p>
+            : <p className="empty-note">Click <strong>Add sales report</strong> and choose the Detailed Sales Report export (or drag it onto the page). It needs the columns <code>Date</code>, <code>Patient Name</code> and <code>Total Payment</code>.</p>}
+          {children}
+          {!readOnly && <button type="button" className="btn btn-outline btn-sm" style={{ margin: "12px 0" }} onClick={downloadTemplate}><Download size={14} />Download template</button>}
         </>
       )}
       <p className="drill-meta">Files add up: rows that appear in more than one file are counted once. Removing a file only deletes rows no other file has.</p>

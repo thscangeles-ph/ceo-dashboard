@@ -33,6 +33,8 @@ Reports that list patients are marked confidential in the footer of every page. 
 
 The app always uses the light look on a white page, even when the device is set to dark mode.
 
+**Who sees what (with accounts).** Each account has **its own Sales Dashboard**: the sales files a person adds there are seen only by them, and other people's uploads never change it (an empty Sales Dashboard can start from a copy of the team's reports). **Patient Acquisition Cost is shared**: its sales report files (added on that tab by Admin, ManCom or Doctors) and the marketing spend are the same for everyone. The **Inquiry Tracker and CRM are shared and live**: when anyone adds or changes an inquiry, everyone's screen updates within seconds (every 30 seconds where live updates aren't available).
+
 Out of the box, workbooks are processed in the browser and never uploaded to a server, and no environment variables are needed. Connect Supabase (see **Accounts and shared data**) to add logins and share the data across the team.
 
 ## Data stays saved on the device

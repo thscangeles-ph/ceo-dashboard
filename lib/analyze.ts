@@ -137,7 +137,9 @@ export function analyzeSales(rows: SalesRow[]) {
   // Sources are only recorded for NEW patients (NEW and HMO/NEW); returning patients carry N/A.
   // Every new patient is credited to the first source recorded for them, with all of their revenue.
   const hasTypeColumn = rows.some((r) => r.patientType);
-  const sourceRows = hasTypeColumn ? rows.filter((r) => typeGroup(r.patientType) === "new") : rows;
+  // In visit order (row key for same-time visits), so the first source is the same however the rows were loaded.
+  const sourceRows = (hasTypeColumn ? rows.filter((r) => typeGroup(r.patientType) === "new") : [...rows])
+    .sort((x, y) => (x.date?.getTime() || 0) - (y.date?.getTime() || 0) || (x.rowKey < y.rowKey ? -1 : x.rowKey > y.rowKey ? 1 : 0));
   const sourcePatients = new Map<string, { source: string; revenue: number }>();
   for (const row of sourceRows) {
     const p = sourcePatients.get(row.patient) || { source: "", revenue: 0 };

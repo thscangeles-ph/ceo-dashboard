@@ -3,11 +3,13 @@
 -- Safe to run again (also after an earlier version of this file): it only adds or updates what changed.
 --
 -- Account types (profiles.role)
---   'admin'     Admin        : everything, including sales reports, and Team (create accounts, set access).
+--   'admin'     Admin        : everything, including the team's sales reports, and Team (create accounts, set access).
 --   'mancom'    ManCom       : everything, same as Admin.
 --   'doctor'    Doctors      : everything, same as Admin.
 --   'concierge' Concierge    : Patient CRM, with patient names and contact numbers. Add and update inquiries.
---   'marketing' Marketing    : read-only analytics of sales and the CRM, with patient names and numbers hidden.
+--   'marketing' Marketing    : read-only Patient Acquisition Cost and CRM, with patient names and numbers hidden,
+--                              plus their own Sales Dashboard files.
+-- Every account with sales access has its own Sales Dashboard files (personal_sales), seen only by them.
 --   null                     : signed in but no access yet.
 -- Row Level Security enforces this in the database, not only in the app.
 
@@ -131,6 +133,32 @@ drop policy if exists "sheets: marketing reads" on public.sheets;
 create policy "sheets: marketing reads" on public.sheets
   for select to authenticated using (public.app_role() = 'marketing');
 
+-- Personal Sales Dashboards: each account's own sales report files, which nobody else can read.
+-- (The shared sales_rows above are the team's reports behind Patient Acquisition Cost.)
+create table if not exists public.personal_sales (
+  owner uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  key text not null,
+  kind text not null check (kind in ('row', 'sheet')),
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (owner, key)
+);
+alter table public.personal_sales enable row level security;
+drop policy if exists "personal sales: own files only" on public.personal_sales;
+create policy "personal sales: own files only" on public.personal_sales
+  for all to authenticated
+  using (owner = auth.uid() and (public.full_access() or public.app_role() = 'marketing'))
+  with check (owner = auth.uid() and (public.full_access() or public.app_role() = 'marketing'));
+
+-- Live updates: the Inquiry Tracker and CRM refresh on everyone's screen when an inquiry changes.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'inquiries') then
+    execute 'alter publication supabase_realtime add table public.inquiries';
+  end if;
+end $$;
+
 -- 3. De-identified views for Marketing -------------------------------------
 -- Same rows, but the patient name becomes a short code and the contact number is removed, so
 -- Marketing can count patients and measure channels without seeing who they are. The views run as
@@ -150,9 +178,9 @@ create or replace view public.sales_marketing as
   where public.app_role() = 'marketing' or public.full_access();
 
 -- Only signed-in users reach these; RLS and the view filters decide what each one sees.
-revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets, public.inquiries_marketing, public.sales_marketing from anon;
+revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets, public.personal_sales, public.inquiries_marketing, public.sales_marketing from anon;
 grant select, update on public.profiles to authenticated;
-grant select, insert, update, delete on public.inquiries, public.sales_rows, public.sheets to authenticated;
+grant select, insert, update, delete on public.inquiries, public.sales_rows, public.sheets, public.personal_sales to authenticated;
 grant select on public.inquiries_marketing, public.sales_marketing to authenticated;
 
 -- 4. Make yourself the first Admin -------------------------------------------

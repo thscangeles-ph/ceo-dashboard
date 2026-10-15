@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, PhilippinePeso, ClipboardList, ListChecks, Cloud, FileSpreadsheet, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
-import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember } from "@/lib/store";
+import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember, splitWorkspace } from "@/lib/store";
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deleteSales, deleteSheets, getCloud, loadCloud, loadProfile, saveInquiries, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deleteSales, deleteSheets, getCloud, loadCloud, loadInquiries, loadProfile, revive, saveInquiries, savePersonal, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
 import { AcquisitionDashboard } from "@/components/acquisition";
 import type { AcquisitionSpend } from "@/lib/acquisition";
 import { spendKey } from "@/lib/acquisition";
@@ -44,8 +44,14 @@ const toInputDate = (date: Date | null) => (date ? `${date.getFullYear()}-${Stri
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
+  // The Sales Dashboard's files: with accounts, each person's own (nobody else sees them).
   const [sales, setSales] = useState<SalesRow[]>([]);
+  const [mySheets, setMySheets] = useState<SheetSummary[]>([]);
+  // The team's shared sales reports behind Patient Acquisition Cost (same for everyone).
+  const [teamSales, setTeamSales] = useState<SalesRow[]>([]);
+  const [personalMissing, setPersonalMissing] = useState(false);
   const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
+  // Shared file lists: tracker files and the team's sales reports.
   const [sheets, setSheets] = useState<SheetSummary[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,15 +123,16 @@ export default function Home() {
   const refreshCloud = useCallback(async () => {
     const sb = getCloud();
     if (!sb || !cloudKey) return;
-    const myRole = cloudKey.split("|")[1] as Role;
+    const [myId, myRole] = cloudKey.split("|") as [string, Role];
     setBusy(true);
     try {
-      const data = await loadCloud(sb, myRole);
-      setSales(data.sales); setInquiries(data.inquiries); setSheets(data.sheets); setSpends(data.spends); setSyncedAt(new Date()); setError("");
-      setFilters((f) => ({ ...f, status: data.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
-      // Concierge work in the Inquiry Tracker; without a sales report the CRM is the first thing to show.
+      const data = await loadCloud(sb, myRole, myId);
+      setSales(data.mySales); setMySheets(data.mySheets); setTeamSales(data.teamSales); setPersonalMissing(data.personalMissing);
+      setInquiries(data.inquiries); setSheets(data.sheets); setSpends(data.spends); setSyncedAt(new Date()); setError("");
+      setFilters((f) => ({ ...f, status: data.mySales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
+      // Concierge work in the Inquiry Tracker; without any sales report the CRM is the first thing to show.
       if (myRole === "concierge") setTab((t) => (t === "summary" ? "tracker" : t));
-      else if (!data.sales.length && data.inquiries.length) setTab((t) => (t === "summary" ? "crm" : t));
+      else if (!data.mySales.length && !data.teamSales.length && data.inquiries.length) setTab((t) => (t === "summary" ? "crm" : t));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -146,10 +153,50 @@ export default function Home() {
     return () => { live = false; clearTimeout(first); document.removeEventListener("visibilitychange", onVisible); };
   }, [cloudKey, refreshCloud]);
 
+  // The Inquiry Tracker and CRM stay in step for everyone: changes arrive live from the database (Supabase
+  // Realtime). Where live updates aren't available (not switched on yet, or Marketing's de-identified view),
+  // the inquiries are re-read every 30 seconds while the app is open.
+  useEffect(() => {
+    const sb = getCloud();
+    if (!sb || !cloudKey) return;
+    const myRole = cloudKey.split("|")[1] as Role;
+    const pending = new Map<string, InquiryRow | null>();
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let live = true;
+    const flush = () => {
+      const changes = new Map(pending); pending.clear();
+      setInquiries((list) => {
+        const map = new Map(list.map((r) => [r.rowKey, r]));
+        changes.forEach((row, key) => (row ? map.set(key, row) : map.delete(key)));
+        return Array.from(map.values());
+      });
+      setSyncedAt(new Date());
+    };
+    const startPolling = () => {
+      if (poll || !live) return;
+      poll = setInterval(() => {
+        if (document.visibilityState !== "visible") return;
+        void loadInquiries(sb, myRole).then((rows) => { setInquiries(rows); setSyncedAt(new Date()); }).catch(() => undefined);
+      }, 30_000);
+    };
+    if (myRole === "marketing") { startPolling(); return () => { live = false; clearInterval(poll); }; }
+    const channel = sb.channel("inquiries-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "inquiries" }, (payload) => {
+        const row = payload.new as { key?: string; data?: unknown } | null;
+        if (payload.eventType === "DELETE") { const key = (payload.old as { key?: string })?.key; if (key) pending.set(key, null); }
+        else if (row?.key && row.data) pending.set(row.key, revive<InquiryRow>(row.data));
+        // A big upload arrives as many events; apply them together.
+        clearTimeout(flushTimer); flushTimer = setTimeout(flush, 400);
+      })
+      .subscribe((status) => { if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") startPolling(); });
+    return () => { live = false; clearTimeout(flushTimer); clearInterval(poll); void sb.removeChannel(channel); };
+  }, [cloudKey]);
+
   const signOut = async () => {
     await getCloud()?.auth.signOut();
     // Shared data lives in the cloud and is not kept on the device; any older device-only data stays until an admin moves or discards it.
-    setSales([]); setInquiries([]); setSheets([]); setSpends([]); setDeviceData(null); setTeam(false); setTab("summary");
+    setSales([]); setMySheets([]); setTeamSales([]); setInquiries([]); setSheets([]); setSpends([]); setDeviceData(null); setTeam(false); setTab("summary");
   };
 
   const uploadDeviceData = async () => {
@@ -158,9 +205,12 @@ export default function Home() {
     setBusy(true);
     try {
       const known = new Map(inquiries.map((r) => [r.rowKey, r]));
-      await saveInquiries(sb, deviceData.inquiries.filter((r) => !known.has(r.rowKey) || r.editedAt));
-      if (full) await saveSales(sb, deviceData.sales);
-      await saveSheets(sb, deviceData.sheets.filter((s) => full || s.kind === "concierge"));
+      const device = splitWorkspace(deviceData);
+      if (canEdit) await saveInquiries(sb, device.inquiries.filter((r) => !known.has(r.rowKey) || r.editedAt));
+      // The device's Sales Dashboard files become this account's own; its team files become the team's.
+      if (role !== "concierge" && auth.status === "signedIn") await savePersonal(sb, auth.userId, { rows: device.sales, sheets: device.mySheets });
+      if (full) await saveSales(sb, device.teamSales);
+      await saveSheets(sb, device.sheets.filter((s) => (full ? true : canEdit && s.kind === "concierge")));
       await clearWorkspace(); setDeviceData(null);
       await refreshCloud();
     } catch (e) { setError((e as Error).message); }
@@ -175,20 +225,25 @@ export default function Home() {
       if (cancelled) return;
       setRememberState(keep);
       if (saved) {
-        setSales(saved.sales); setInquiries(saved.inquiries); setSheets(saved.sheets); setSavedAt(saved.savedAt);
-        setFilters((f) => ({ ...f, status: saved.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
-        if (!saved.sales.length && saved.inquiries.length) setTab("crm");
+        const w = splitWorkspace(saved);
+        setSales(w.sales); setMySheets(w.mySheets); setTeamSales(w.teamSales); setInquiries(w.inquiries); setSheets(w.sheets); setSavedAt(saved.savedAt);
+        setFilters((f) => ({ ...f, status: w.sales.some((row) => isPaid(row.status)) ? "paid" : "all" }));
+        if (!w.sales.length && !w.teamSales.length && w.inquiries.length) setTab("crm");
       }
       setRestoring(false);
     });
     return () => { cancelled = true; };
   }, []);
 
-  const persist = useCallback(async (data: { sales: SalesRow[]; inquiries: InquiryRow[]; sheets: SheetSummary[] }, keep = remember) => {
-    if (cloudConfigured) return; // signed-in data is saved to the cloud instead
-    if (!keep) { await clearWorkspace(); setSavedAt(null); return; }
-    setSavedAt(await saveWorkspace(data));
-  }, [remember]);
+  // Without accounts, everything is saved on this device shortly after it changes (signed-in data is saved to the cloud instead).
+  useEffect(() => {
+    if (cloudConfigured || restoring) return;
+    const timer = setTimeout(async () => {
+      if (!remember || (!sales.length && !inquiries.length && !teamSales.length)) { await clearWorkspace(); setSavedAt(null); return; }
+      setSavedAt(await saveWorkspace({ sales, inquiries, sheets, mySheets, teamSales }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [sales, inquiries, sheets, mySheets, teamSales, remember, restoring]);
 
   // Logging and updating inquiries in the app (the CRM's working side).
   const [editor, setEditor] = useState<{ row: InquiryRow | null } | null>(null);
@@ -205,24 +260,28 @@ export default function Home() {
     latestInquiries.current = next;
     setInquiries(next); setEditor(null);
     if (!base) setTab("tracker");
-    void persist({ sales, inquiries: next, sheets });
   };
   const deleteInquiry = async (row: InquiryRow) => {
     if (cloud) await removeInquiry(getCloud()!, row.rowKey);
     const next = latestInquiries.current.filter((r) => r.rowKey !== row.rowKey);
     latestInquiries.current = next;
     setInquiries(next); setEditor(null);
-    void persist({ sales, inquiries: next, sheets });
   };
 
   const toggleRemember = (keep: boolean) => {
     setRemember(keep); setRememberState(keep);
-    void persist({ sales, inquiries, sheets }, keep);
   };
 
-  /** `only` comes from the Add sales report / Upload tracker file buttons: other kinds of sheets in the file are ignored. */
-  const processFiles = useCallback(async (incoming: File[], only?: "sales" | "concierge") => {
-    if (!canEdit) { setError("Marketing accounts can view the dashboards but not add files."); return; }
+  /**
+   * Reads Excel files. Sales reports go to the Sales Dashboard (this account's own files) or, from the
+   * Patient Acquisition Cost tab, to the team's shared reports. `only` comes from the Add sales report /
+   * Add team sales report / Upload tracker file buttons: other kinds of sheets in the file are ignored.
+   */
+  const processFiles = useCallback(async (incoming: File[], only?: "sales" | "team" | "concierge") => {
+    const target: "mine" | "team" = only === "team" || (!only && tab === "acquisition") ? "team" : "mine";
+    const canAddSales = target === "team" ? full : role !== "concierge";
+    if (!canEdit && only === "concierge") { setError("Marketing accounts can view the CRM but not add tracker files."); return; }
+    if (!canAddSales && only && only !== "concierge") { setError("The team's sales reports are added by an Admin, ManCom or Doctors account."); return; }
     const excelFiles = incoming.filter((file) => EXCEL.test(file.name));
     if (!excelFiles.length) { setError("Please upload an Excel file in .xlsx or .xls format."); return; }
     setBusy(true);
@@ -233,17 +292,20 @@ export default function Home() {
         if (!parsed.inquiries.length) throw new Error(`No concierge inquiry tracker was found in ${names}. The tracker needs columns such as Channel / Source, Name and Inquired. To add a sales report, use Add sales report on the Sales Dashboard.`);
         parsed.sales = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "concierge");
       }
-      if (only === "sales") {
+      if (only === "sales" || only === "team") {
         if (!parsed.sales.length) throw new Error(`No sales report was found in ${names}. It needs the columns Date, Patient Name and Total Payment. To add the concierge inquiry tracker, use Upload tracker file in the Inquiry Tracker.`);
         parsed.inquiries = []; parsed.sheets = parsed.sheets.filter((s) => s.kind === "sales");
       }
       if (!parsed.sales.length && !parsed.inquiries.length) throw new Error(parsed.problems.join(" ") || "No usable rows were found in the workbook.");
-      // Only full-access accounts may add sales reports once accounts are on; staff uploads keep the tracker only.
-      const newSales = full ? parsed.sales : [];
-      const newSheets = parsed.sheets.filter((s) => full || s.kind === "concierge");
-      if (!newSales.length && !parsed.inquiries.length) throw new Error("Sales reports can only be added by an Admin, ManCom or Doctors account. Your account can add the concierge inquiry tracker.");
+      const newSales = canAddSales ? parsed.sales : [];
+      const newSalesSheets = canAddSales ? parsed.sheets.filter((s) => s.kind === "sales") : [];
+      const newInquiries = canEdit ? parsed.inquiries : [];
+      const newTrackerSheets = canEdit ? parsed.sheets.filter((s) => s.kind === "concierge") : [];
+      if (!newSales.length && !newInquiries.length) throw new Error(target === "team" ? "The team's sales reports are added by an Admin, ManCom or Doctors account." : "Your account can add the concierge inquiry tracker, not sales reports.");
+
       // Adding files merges them with what is already loaded; identical rows are counted once.
-      const salesMap = new Map(sales.map((row) => [row.rowKey, row]));
+      const current = target === "team" ? teamSales : sales;
+      const salesMap = new Map(current.map((row) => [row.rowKey, row]));
       // A row already loaded from another file keeps that file as an owner too, so removing either file leaves it in place.
       const touchedSales = new Map<string, SalesRow>();
       newSales.forEach((row) => {
@@ -255,9 +317,9 @@ export default function Home() {
       // Inquiries added in the app come back from an exported tracker under a key made from their
       // columns; match them to the app's row so re-uploading the export doesn't duplicate them.
       const byContent = new Map(inquiries.map((row) => [inquiryKey(row.patient, row.contact, row.channel, row.date, row.procedure), row.rowKey]));
-      const incoming = parsed.inquiries.map((row) => (inquiryMap.has(row.rowKey) || !byContent.has(row.rowKey) ? row : { ...row, rowKey: byContent.get(row.rowKey)! }));
+      const incomingRows = newInquiries.map((row) => (inquiryMap.has(row.rowKey) || !byContent.has(row.rowKey) ? row : { ...row, rowKey: byContent.get(row.rowKey)! }));
       // An inquiry updated in the app wins over an older copy of the same row in a re-uploaded sheet.
-      const changedInquiries = incoming.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
+      const changedInquiries = incomingRows.filter((row) => !inquiryMap.get(row.rowKey)?.editedAt);
       const addedCount = new Set(changedInquiries.filter((row) => !inquiryMap.has(row.rowKey)).map((row) => row.rowKey)).size;
       // Field order differs once rows come back from the database, so compare with sorted keys.
       const same = (a?: InquiryRow, b?: InquiryRow) => {
@@ -267,44 +329,41 @@ export default function Home() {
       };
       const updatedCount = new Set(changedInquiries.filter((row) => inquiryMap.has(row.rowKey) && !same(inquiryMap.get(row.rowKey), row)).map((row) => row.rowKey)).size;
       const unchangedCount = new Set(changedInquiries.filter((row) => same(inquiryMap.get(row.rowKey), row)).map((row) => row.rowKey)).size;
-      const keptCount = incoming.length - changedInquiries.length;
+      const keptCount = incomingRows.length - changedInquiries.length;
       changedInquiries.forEach((row) => inquiryMap.set(row.rowKey, row));
       if (cloud) {
         const sb = getCloud()!;
         await saveInquiries(sb, changedInquiries);
-        await saveSales(sb, Array.from(touchedSales.values()));
-        await saveSheets(sb, newSheets);
+        if (target === "team") { await saveSales(sb, Array.from(touchedSales.values())); await saveSheets(sb, newSalesSheets); }
+        else if (newSales.length && auth.status === "signedIn") await savePersonal(sb, auth.userId, { rows: Array.from(touchedSales.values()), sheets: newSalesSheets });
+        await saveSheets(sb, newTrackerSheets);
         setSyncedAt(new Date());
       }
       setNotice([
-        parsed.inquiries.length ? `Inquiry tracker: ${count(addedCount)} new ${addedCount === 1 ? "inquiry" : "inquiries"} added, ${count(updatedCount)} updated, ${count(unchangedCount)} already up to date${keptCount ? `, ${count(keptCount)} kept as edited in the app` : ""}.` : "",
-        parsed.sales.length && !newSales.length ? "The sales report was skipped: only Admin, ManCom or Doctors accounts can add sales data." : "",
+        newInquiries.length ? `Inquiry tracker: ${count(addedCount)} new ${addedCount === 1 ? "inquiry" : "inquiries"} added, ${count(updatedCount)} updated, ${count(unchangedCount)} already up to date${keptCount ? `, ${count(keptCount)} kept as edited in the app` : ""}.` : "",
+        newSales.length ? (target === "team" ? "Sales report added to the team's Patient Acquisition Cost, for everyone." : cloud ? "Sales report added to your own Sales Dashboard; other accounts don't see it." : "") : "",
+        parsed.sales.length && !newSales.length ? (target === "team" ? "The sales report was skipped: the team's sales reports are added by an Admin, ManCom or Doctors account." : "The sales report was skipped: this account can't add sales reports.") : "",
+        parsed.inquiries.length && !newInquiries.length ? "The inquiry tracker was skipped: Marketing accounts can't change it." : "",
       ].filter(Boolean).join(" "));
       const nextSales = Array.from(salesMap.values());
-      const nextInquiries = Array.from(inquiryMap.values());
-      const mergedSheets = new Map(sheets.map((item) => [sheetKey(item), item]));
-      newSheets.forEach((item) => mergedSheets.set(sheetKey(item), item));
-      const nextSheets = Array.from(mergedSheets.values());
-      setSales(nextSales);
-      setInquiries(nextInquiries);
-      setSheets(nextSheets);
-      void persist({ sales: nextSales, inquiries: nextInquiries, sheets: nextSheets });
-      setFilters({
-        patientType: "all",
-        status: nextSales.some((row) => isPaid(row.status)) ? "paid" : "all",
-        from: "", to: "",
-      });
+      const mergeSheets = (list: SheetSummary[], add: SheetSummary[]) => { const m = new Map(list.map((x) => [sheetKey(x), x])); add.forEach((x) => m.set(sheetKey(x), x)); return Array.from(m.values()); };
+      if (target === "team") { setTeamSales(nextSales); setSheets((list) => mergeSheets(list, [...newSalesSheets, ...newTrackerSheets])); }
+      else {
+        setSales(nextSales); setMySheets((list) => mergeSheets(list, newSalesSheets)); setSheets((list) => mergeSheets(list, newTrackerSheets));
+        if (newSales.length) setFilters({ patientType: "all", status: nextSales.some((row) => isPaid(row.status)) ? "paid" : "all", from: "", to: "" });
+      }
+      setInquiries(Array.from(inquiryMap.values()));
       setError(parsed.problems.join(" "));
       // Land on the tab the new file belongs to (a button inside a tab keeps you there).
-      if (only) { /* stay */ } else if (parsed.inquiries.length && !parsed.sales.length) setTab((t) => (t === "tracker" ? t : "crm"));
-      else if (parsed.sales.length && !parsed.inquiries.length) setTab("summary");
+      if (only) { /* stay */ } else if (newInquiries.length && !newSales.length) setTab((t) => (t === "tracker" ? t : "crm"));
+      else if (newSales.length && !newInquiries.length) setTab(target === "team" ? "acquisition" : "summary");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The workbook could not be read.");
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
-  }, [sales, inquiries, sheets, persist, full, cloud, canEdit]);
+  }, [sales, teamSales, inquiries, full, cloud, canEdit, role, tab, auth]);
 
   // Installed on a computer, the app can be chosen in "Open with" for Excel files.
   const latestProcess = useRef(processFiles);
@@ -317,11 +376,11 @@ export default function Home() {
     });
   }, []);
 
-  // Removes uploaded sales report files; rows another file also contains stay.
-  const removeSalesFiles = async (targets: SheetSummary[]) => {
+  // Removes uploaded sales report files (this account's own, or the team's); rows another file also contains stay.
+  const removeSalesFiles = async (targets: SheetSummary[], target: "mine" | "team") => {
     const owners = new Set(targets.map((s) => s.id || LEGACY_UPLOAD));
     const keep: SalesRow[] = [], changed: SalesRow[] = [], dropped: string[] = [];
-    for (const row of sales) {
+    for (const row of target === "team" ? teamSales : sales) {
       const mine = row.uploads ?? [LEGACY_UPLOAD];
       const left = mine.filter((owner) => !owners.has(owner));
       if (!left.length) dropped.push(row.rowKey);
@@ -329,19 +388,24 @@ export default function Home() {
       else keep.push(row);
     }
     const removed = new Set(targets.map(sheetKey));
-    const nextSheets = sheets.filter((s) => !removed.has(sheetKey(s)));
     setBusy(true);
     try {
       if (cloud) {
         const sb = getCloud()!;
-        await saveSales(sb, changed);
-        await deleteSales(sb, dropped);
-        await deleteSheets(sb, Array.from(removed));
+        if (target === "team") {
+          await saveSales(sb, changed);
+          await deleteSales(sb, dropped);
+          await deleteSheets(sb, Array.from(removed));
+        } else if (auth.status === "signedIn") {
+          await savePersonal(sb, auth.userId, { rows: changed });
+          await deletePersonal(sb, auth.userId, { rowKeys: dropped, sheets: targets });
+        }
         setSyncedAt(new Date());
       }
-      setSales(keep); setSheets(nextSheets); setError("");
+      if (target === "team") { setTeamSales(keep); setSheets((list) => list.filter((s) => !removed.has(sheetKey(s)))); }
+      else { setSales(keep); setMySheets((list) => list.filter((s) => !removed.has(sheetKey(s)))); }
+      setError("");
       setNotice(`Removed ${targets.map((s) => s.file).join(", ")}: ${count(dropped.length)} sales rows deleted${changed.length ? `, ${count(changed.length)} kept because another file has them` : ""}.`);
-      void persist({ sales: keep, inquiries, sheets: nextSheets });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -349,9 +413,22 @@ export default function Home() {
     }
   };
 
-  // The Add sales report and Upload tracker file buttons share the file picker but accept only their own kind of file.
-  const uploadKind = useRef<"sales" | "concierge" | undefined>(undefined);
-  const pickFiles = (only?: "sales" | "concierge") => { uploadKind.current = only; inputRef.current?.click(); };
+  // Copies the team's shared sales reports into this account's own Sales Dashboard (a starting point; later changes stay separate).
+  const copyTeamSales = async () => {
+    setBusy(true);
+    try {
+      const teamSheets = sheets.filter((s) => s.kind === "sales");
+      if (cloud && auth.status === "signedIn") await savePersonal(getCloud()!, auth.userId, { rows: teamSales, sheets: teamSheets });
+      setSales(teamSales); setMySheets(teamSheets); setError("");
+      setFilters({ patientType: "all", status: teamSales.some((row) => isPaid(row.status)) ? "paid" : "all", from: "", to: "" });
+      setNotice("The team's sales reports were copied into your Sales Dashboard. Files you add or remove here now only change your own view.");
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+
+  // The upload buttons share the file picker but accept only their own kind of file.
+  const uploadKind = useRef<"sales" | "team" | "concierge" | undefined>(undefined);
+  const pickFiles = (only?: "sales" | "team" | "concierge") => { uploadKind.current = only; inputRef.current?.click(); };
 
   const SPEND_STORE = "thsc-acquisition-spend";
   useEffect(() => {
@@ -365,7 +442,7 @@ export default function Home() {
     if (!cloud) { try { localStorage.setItem(SPEND_STORE, JSON.stringify(next)); } catch { /* not kept */ } }
   };
 
-  const reset = () => { try { localStorage.removeItem(SPEND_STORE); } catch { /* ignore */ } setSpends([]); void clearWorkspace(); setSavedAt(null); setSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
+  const reset = () => { try { localStorage.removeItem(SPEND_STORE); } catch { /* ignore */ } setSpends([]); void clearWorkspace(); setSavedAt(null); setSales([]); setMySheets([]); setTeamSales([]); setInquiries([]); setSheets([]); setError(""); setFilters({ patientType: "all", status: "paid", from: "", to: "" }); setTab("summary"); };
 
   const hasTypes = sales.some((row) => row.patientType);
   // Unique patients per patient-type option, shown in the filter so empty types are obvious.
@@ -388,7 +465,7 @@ export default function Home() {
     ? summary.minDate.toDateString() === summary.maxDate.toDateString() ? longDate(summary.minDate) : `${longDate(summary.minDate)} – ${longDate(summary.maxDate)}`
     : "—";
   const typeInfo = patientTypeInfo(filters.patientType);
-  const salesSheets = sheets.filter((sheet) => sheet.kind === "sales");
+  const salesSheets = mySheets;
   const columns = new Set(salesSheets.flatMap((sheet) => sheet.columns));
   const gaps = [
     !funnel && "No concierge log was uploaded, so inquiries that never became paying patients are invisible. Add the Central Concierge workbook (or a sheet with Channel and Status columns) to see the full funnel.",
@@ -478,8 +555,11 @@ export default function Home() {
         )}
 
         {!restoring && tab === "acquisition" && role !== "concierge" && (
-          <AcquisitionDashboard key={sales.length ? "data" : "empty"} rows={sales} spends={spends} canEdit={full}
-            onSaveSpend={saveAcquisitionSpend} onAddSales={full ? () => pickFiles("sales") : undefined} />
+          <AcquisitionDashboard key={teamSales.length ? "data" : "empty"} rows={teamSales} spends={spends} canEdit={full}
+            onSaveSpend={saveAcquisitionSpend} onAddSales={full ? () => pickFiles("team") : undefined}
+            files={<SalesFiles heading="Team sales report files" readOnly={!full}
+              scope={cloud ? "Shared: everyone sees the same Patient Acquisition Cost. Admin, ManCom and Doctors add or remove these files; each person's Sales Dashboard has its own files." : undefined}
+              sheets={sheets.filter((s) => s.kind === "sales")} rows={teamSales} busy={busy} onAdd={() => pickFiles("team")} onRemove={(targets) => void removeSalesFiles(targets, "team")} />} />
         )}
 
         {!restoring && tab === "crm" && (inquiries.length
@@ -513,7 +593,7 @@ export default function Home() {
               </div>
             </header>
 
-            {full && <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets)} />}
+            <SalesFiles heading="My sales report files" scope={cloud ? "Your own files: only your account sees them, and other people's uploads never change this dashboard." : undefined} sheets={mySheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets, "mine")} />
 
             <div className="filterbar no-print">
               {hasTypes && (
@@ -566,9 +646,12 @@ export default function Home() {
               </div>
               <div className="period">Reporting period<br /><strong>No sales report yet</strong></div>
             </header>
-            {full
-              ? <SalesFiles sheets={sheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets)} />
-              : <div className="panel empty-tab"><h3><FileSpreadsheet size={16} />No sales report added yet</h3><p className="empty-note">An Admin, ManCom or Doctors account adds the sales report. Until then, open the <button type="button" className="link-btn" onClick={() => setTab("crm")}>CRM Dashboard</button>.</p></div>}
+            {personalMissing && <div className="alert" role="alert"><div><strong>One database step is left.</strong> Personal Sales Dashboards need the updated <code>supabase/schema.sql</code>: run it once in Supabase → SQL Editor. Until then, sales reports can&apos;t be saved here.</div></div>}
+            <SalesFiles heading="My sales report files" scope={cloud ? "Your own files: only your account sees them, and other people's uploads never change this dashboard." : undefined} sheets={mySheets} rows={sales} busy={busy} onAdd={() => pickFiles("sales")} onRemove={(targets) => void removeSalesFiles(targets, "mine")}>
+              {cloud && teamSales.length > 0 && (
+                <p className="empty-note" style={{ marginTop: 10 }}>Or start from the team&apos;s shared sales reports ({count(teamSales.length)} rows, the ones behind Patient Acquisition Cost): <button type="button" className="link-btn" disabled={busy} onClick={() => void copyTeamSales()}>copy them into my Sales Dashboard</button>.</p>
+              )}
+            </SalesFiles>
           </>
         )}
       </div>
