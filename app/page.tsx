@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, BarChart3, Mic, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -9,7 +9,10 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember,
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deleteSales, deleteSheets, getCloud, loadCloud, loadInquiries, loadProfile, revive, saveInquiries, savePersonal, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, loadCloud, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { PodcastDashboard } from "@/components/podcast";
+import type { PodcastStore } from "@/lib/podcast";
+import { localPodcastStore } from "@/lib/podcast";
 import { AcquisitionDashboard } from "@/components/acquisition";
 import type { AcquisitionSpend } from "@/lib/acquisition";
 import { spendKey } from "@/lib/acquisition";
@@ -59,7 +62,7 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
-  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker">("summary");
+  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker" | "podcast">("summary");
   // The sidebar can shrink to icons for more room; remembered on this device.
   const [sideCollapsed, setSideCollapsed] = useState(false);
   useEffect(() => { try { if (localStorage.getItem("thsc-sidebar") === "collapsed") setTimeout(() => setSideCollapsed(true), 0); } catch { /* storage blocked */ } }, []);
@@ -272,6 +275,11 @@ export default function Home() {
     setInquiries(next); setEditor(null);
   };
 
+  // Podcast Tracker & Scheduler: shared in the cloud with accounts, kept in this browser without them.
+  const podcastStore = useMemo<PodcastStore>(() => (cloud
+    ? { shared: true, load: () => loadPodcast(getCloud()!), save: (kind, id, item) => savePodcastItem(getCloud()!, kind, id, item), remove: (kind, id) => deletePodcastItem(getCloud()!, kind, id) }
+    : localPodcastStore), [cloud]);
+
   const toggleRemember = (keep: boolean) => {
     setRemember(keep); setRememberState(keep);
   };
@@ -483,11 +491,12 @@ export default function Home() {
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((current) => ({ ...current, [key]: value }));
   const hasData = sales.length > 0 || inquiries.length > 0;
 
-  const NAV: { key: typeof tab; label: string; short: string; icon: typeof BarChart3; show: boolean; count?: number; empty?: string }[] = [
+  const NAV: { key: typeof tab; label: string; short: string; icon: typeof BarChart3; show: boolean; count?: number; empty?: string; group?: string }[] = [
     { key: "summary", label: "Sales Dashboard", short: "Sales", icon: BarChart3, show: role !== "concierge", empty: sales.length ? undefined : "no file" },
     { key: "acquisition", label: "Patient Acquisition Cost", short: "Acquisition", icon: PhilippinePeso, show: role !== "concierge", empty: teamSales.length ? undefined : "no file" },
     { key: "crm", label: "CRM Dashboard", short: "CRM", icon: Users, show: true, empty: inquiries.length ? undefined : "no tracker" },
     { key: "tracker", label: "Inquiry Tracker", short: "Tracker", icon: ListChecks, show: canEdit, count: inquiries.length },
+    { key: "podcast", label: "Podcast Tracker & Scheduler", short: "Podcast", icon: Mic, show: role !== "concierge", group: "Podcast" },
   ];
 
   // Sign-in gates when accounts are on.
@@ -535,12 +544,15 @@ export default function Home() {
           {NAV.filter((item) => item.show).map((item) => {
             const Icon = item.icon;
             return (
-              <button key={item.key} type="button" className={tab === item.key ? "on" : ""} aria-current={tab === item.key ? "page" : undefined} title={item.label}
+              <Fragment key={item.key}>
+              {item.group && <div className="side-label side-group">{item.group}</div>}
+              <button type="button" className={tab === item.key ? "on" : ""} aria-current={tab === item.key ? "page" : undefined} title={item.label}
                 onClick={() => (item.key === "tracker" ? openTracker() : setTab(item.key))}>
                 <Icon size={18} aria-hidden />
                 <span className="side-text">{item.label}</span><span className="side-short">{item.short}</span>
                 {item.count ? <small>{count(item.count)}</small> : item.empty ? <em className="side-empty">{item.empty}</em> : null}
               </button>
+              </Fragment>
             );
           })}
           <button type="button" className="side-collapse" onClick={() => toggleSide(!sideCollapsed)} aria-label={sideCollapsed ? "Expand the sidebar" : "Collapse the sidebar"} title={sideCollapsed ? "Expand" : "Collapse"}>
@@ -592,6 +604,10 @@ export default function Home() {
           <InquiryTracker key={trackerFocus.n} rows={inquiries} initialSearch={trackerFocus.search}
             sheets={sheets} busy={busy} onUpload={() => pickFiles("concierge")} actor={auth.status === "signedIn" ? auth.email : ""}
             onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
+        )}
+
+        {!restoring && tab === "podcast" && role !== "concierge" && (
+          <PodcastDashboard store={podcastStore} canEdit actor={auth.status === "signedIn" ? auth.email : ""} />
         )}
 
         {tab === "summary" && sales.length > 0 && (

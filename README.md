@@ -19,6 +19,7 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **Patient Acquisition Cost Report:** the cards (with cost per new patient), patients by type, new patients by source and cost by source with the spend entered
 - **CRM Report:** the cards, inquiry outcomes, findings and the eight CRM areas, including the follow-up queue (not in Marketing accounts' reports)
 - **Inquiry Tracker report:** the inquiries in the current view (use From / To for a period), with each one's next step
+- **Podcast Report (YouTube):** subscribers and views, episodes vs clips, top videos, latest uploads, and the schedule (what is not yet published, and how the published ones are doing)
 
 Reports that list patients are marked confidential in the footer of every page. The PDF is made in the browser; nothing is sent to a server.
 
@@ -30,6 +31,13 @@ Reports that list patients are marked confidential in the footer of every page. 
 - Unique patients, transactions and revenue for the chosen type, and **acquisition cost per new patient** (spend ÷ NEW and HMO/NEW patients in the range)
 - **Patients by type** table (click a row to switch the cards), new patients by acquisition source (each new patient counted once, under the first source they gave), and **cost by source** with a spend box per source
 - Spend is saved per date range: pick the month first, then enter that month's spend. With accounts it is shared with the team; Admin, ManCom and Doctors can change it, Marketing can view it, Concierge doesn't see this tab.
+
+**Podcast Tracker & Scheduler** (formerly the separate THSC Podcast Tracker; YouTube only), in its own **Podcast** section of the sidebar:
+
+- **YouTube tracker:** The Heart Speaks channel's subscribers, views and uploads straight from YouTube; full episodes (8 minutes or longer) vs clips & shorts; views per episode (latest 20); views by publish month; top videos; channel views and subscribers over time (one reading a day, saved whenever the tab is opened); and every upload with likes, comments and engagement rate. Filter by format and publish period, or click a row of the Episodes vs clips table. **Import export** adds watch time from a YouTube Studio export (Analytics → Advanced mode → Export → CSV, the Table data.csv file), which the public YouTube figures don't include.
+- **Scheduler:** plan each episode, clip or YouTube Short from idea to published: title, guest doctor, host, who it's assigned to, recording date, time and location, YouTube publish date and time, status (Idea, Scheduled, Recorded, Editing, Published), the YouTube link and notes. A month calendar shows recording days and publish dates (click a day to plan on it); the schedule list flags anything whose recording or publish date has passed. Link a published entry to its video (paste the link or pick a recent upload) to see its live views.
+- Admin, ManCom, Doctors and Marketing can use and change it; Concierge doesn't see it. With accounts the schedule, growth readings and imported exports are shared with the team; without accounts they stay in this browser.
+- The figures need a **YouTube Data API key** in Vercel (see **Deploy to Vercel**). The key stays on the server and can only read public figures.
 
 The app always uses the light look on a white page, even when the device is set to dark mode.
 
@@ -51,11 +59,11 @@ With Supabase connected, everyone signs in and the whole team shares one set of 
 
 | Account | Sees and does |
 | --- | --- |
-| **Admin** | Everything: Sales Dashboard, CRM Dashboard, Inquiry Tracker, and **Team** to create accounts and change access |
+| **Admin** | Everything: Sales Dashboard, Patient Acquisition Cost, CRM Dashboard, Inquiry Tracker, Podcast Tracker & Scheduler, and **Team** to create accounts and change access |
 | **ManCom** | Everything, same as Admin |
 | **Doctors** | Everything, same as Admin |
 | **Concierge** | Inquiry Tracker (add and update inquiries, export the Excel file) and CRM Dashboard, with patient names and numbers |
-| **Marketing** | Read-only Sales Dashboard and CRM Dashboard (no Inquiry Tracker). Patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed; no uploads or edits |
+| **Marketing** | Their own Sales Dashboard, and the Podcast Tracker & Scheduler (can change the schedule). Read-only Patient Acquisition Cost and CRM Dashboard (no Inquiry Tracker), where patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed |
 
 The database enforces this (Row Level Security and de-identified views), not only the screens. In the database the roles are stored as `admin`, `mancom`, `doctor`, `concierge` and `marketing`; accounts created as "CEO / Doctor" before these roles existed are `admin` and show as **Admin**.
 
@@ -181,3 +189,5 @@ Open `http://localhost:3000`. The service worker only registers in production bu
 2. Vercel detects **Next.js** automatically. Keep the default build command (`next build`) and deploy.
 
 No environment variables are required for device-only use. For accounts, add the two Supabase variables from `.env.example` (see **Accounts and shared data**).
+
+**Podcast Tracker (YouTube figures):** add `YOUTUBE_API_KEY` in Vercel → this project → Settings → Environment Variables (Production and Preview), then redeploy. It is a Google Cloud API key with the **YouTube Data API v3** enabled; if the old THSC Podcast Tracker project on Vercel already has one, copy that value. It is read on the server only: never add a `NEXT_PUBLIC_` prefix. Optional: `YOUTUBE_CHANNEL_ID` or `YOUTUBE_HANDLE` to track another channel (the default is The Heart Speaks), and `YOUTUBE_MAX_VIDEOS` (default 500).

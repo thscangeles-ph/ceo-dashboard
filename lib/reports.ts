@@ -6,6 +6,8 @@ import { DUE_LABEL } from "./crm";
 import { effectiveResponded } from "./lead";
 import type { InquiryRow } from "./parse";
 import { createReport, fileRange } from "./pdf";
+import type { Channel, PodcastPlan, Snapshot, Video } from "./podcast";
+import { engagementRate, episodeName, formatOf, FORMATS, localDay, PLAN_FORMATS, PLAN_STATUSES, planAlert, sumKnown, videoIdOf } from "./podcast";
 import type { NextStep } from "./tracker";
 import { STEP_LABEL } from "./tracker";
 
@@ -135,4 +137,56 @@ export async function trackerReport(items: { row: InquiryRow; step: NextStep; n:
       row.served ? "Served" : row.noShow ? "No-show" : "-", step.tone === "done" ? `COMPLETE - ${step.detail}` : `${STEP_LABEL[step.tone]}: ${step.text} (${step.detail})`,
     ]), { fontSize: 7, widths: { 0: 9, 1: 24, 6: 52, 10: 50 } });
   r.save(`THSC Inquiry Tracker ${fileRange(from, to)}.pdf`);
+}
+
+/** Podcast Tracker & Scheduler: the YouTube channel's figures (all time) and the schedule. */
+export async function podcastReport(o: { channel: Channel | null; videos: Video[]; history: Snapshot[]; plans: PodcastPlan[]; today: string; fetchedAt: string | null }) {
+  const n = (v: number | null | undefined) => (v === null || v === undefined ? "-" : count(Math.round(v)));
+  const when = (d: string, t: string) => (d ? `${longDate(new Date(`${d}T00:00:00`))}${t ? ` ${t}` : ""}` : "-");
+  const r = await createReport({ title: "Podcast Report (YouTube)", period: o.fetchedAt ? `YouTube figures as of ${new Date(o.fetchedAt).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}` : "YouTube not connected", filters: o.channel ? `Channel: ${o.channel.name} · All uploads, lifetime views` : undefined });
+  const views = sumKnown(o.videos.map((v) => v.views));
+  const parts = FORMATS.map((f) => { const list = o.videos.filter((v) => formatOf(v) === f.id); const vw = sumKnown(list.map((v) => v.views)); const likes = sumKnown(list.map((v) => v.likes)), comments = sumKnown(list.map((v) => v.comments)); return { ...f, list, views: vw, likes, comments, avg: list.length ? vw / list.length : null, rate: vw ? (likes + comments) / vw : null }; });
+  // Subscriber growth over the last 30 days of daily readings.
+  const last = o.history.at(-1);
+  const since = last ? o.history.find((s) => s.date >= localDay(Date.now() - 30 * 86_400_000) && s.date !== last.date) : undefined;
+  const gain = since && last && since.subscribers !== null && last.subscribers !== null ? last.subscribers - since.subscribers : null;
+  r.kpis([
+    { label: "Subscribers", value: n(o.channel?.subscribers), note: gain !== null ? `${gain >= 0 ? "+" : ""}${count(gain)} since ${longDate(new Date(`${since!.date}T00:00:00`))}` : undefined, accent: true },
+    { label: "Channel views", value: n(o.channel?.totalViews), note: `${n(o.channel?.videoCount)} public videos` },
+    { label: "Upload views", value: count(views), note: `${count(o.videos.length)} uploads` },
+    { label: "Full episodes", value: count(parts[0].list.length), note: parts[0].avg !== null ? `${count(Math.round(parts[0].avg))} avg views` : "8 min or longer" },
+    { label: "Clips & shorts", value: count(parts[1].list.length), note: parts[1].avg !== null ? `${count(Math.round(parts[1].avg))} avg views` : "Under 8 min" },
+  ]);
+  r.heading("Episodes vs clips", "Full episodes are uploads 8 minutes or longer. Engagement rate = likes and comments / views.");
+  r.table(["Format", "Uploads", "Views", "Avg views", "Likes", "Comments", "Engagement", "Share of views"],
+    [...parts.map((p) => [p.label, count(p.list.length), count(p.views), n(p.avg), count(p.likes), count(p.comments), p.rate === null ? "-" : pct(p.rate), views ? pct(p.views / views) : "-"]),
+      ["All uploads", count(o.videos.length), count(views), n(o.videos.length ? views / o.videos.length : null), count(sumKnown(o.videos.map((v) => v.likes))), count(sumKnown(o.videos.map((v) => v.comments))), views ? pct((sumKnown(o.videos.map((v) => v.likes)) + sumKnown(o.videos.map((v) => v.comments))) / views) : "-", views ? "100%" : "-"]],
+    { right: [1, 2, 3, 4, 5, 6, 7], boldLast: true });
+  const top = [...o.videos].filter((v) => v.views).sort((a, b) => (b.views ?? 0) - (a.views ?? 0)).slice(0, 10);
+  if (top.length) {
+    r.heading("Top videos");
+    r.bars(top.map((v) => ({ label: episodeName(v.title), value: v.views ?? 0, display: `${count(v.views ?? 0)} views` })));
+  }
+  const latest = [...o.videos].filter((v) => v.publishedAt).sort((a, b) => Date.parse(b.publishedAt!) - Date.parse(a.publishedAt!)).slice(0, 15);
+  if (latest.length) {
+    r.heading("Latest uploads");
+    r.table(["Published", "Video", "Format", "Views", "Likes", "Comments", "Engagement"],
+      latest.map((v) => [longDate(new Date(v.publishedAt!)), v.title, FORMATS.find((f) => f.id === formatOf(v))!.short, n(v.views), n(v.likes), n(v.comments), engagementRate(v) === null ? "-" : pct(engagementRate(v)!)]),
+      { right: [3, 4, 5, 6], widths: { 0: 26, 1: 74 }, fontSize: 7.5 });
+  }
+  const label = (id: string, list: { id: string; label: string }[]) => list.find((x) => x.id === id)?.label ?? id;
+  const open = o.plans.filter((p) => p.status !== "published").sort((a, b) => (a.publishDate || a.recordDate || "9999").localeCompare(b.publishDate || b.recordDate || "9999"));
+  r.heading("Schedule: not yet published", `${count(open.length)} planned upload${open.length === 1 ? "" : "s"}; ${count(o.plans.filter((p) => o.today && planAlert(p, o.today)).length)} need attention (recording or publish date has passed).`);
+  if (open.length) {
+    r.table(["Title", "Format", "Status", "Recording", "Publish on YouTube", "Guest", "Assigned to"],
+      open.map((p) => [`${p.title}${o.today && planAlert(p, o.today) ? ` (${planAlert(p, o.today)})` : ""}`, label(p.format, PLAN_FORMATS), label(p.status, PLAN_STATUSES), when(p.recordDate, p.recordTime), when(p.publishDate, p.publishTime), p.guest || "-", p.assignedTo || "-"]),
+      { fontSize: 7.5, widths: { 0: 50 } });
+  }
+  const byId = new Map(o.videos.map((v) => [v.id, v]));
+  const done = o.plans.filter((p) => p.status === "published").sort((a, b) => (b.publishDate || "").localeCompare(a.publishDate || "")).slice(0, 20);
+  if (done.length) {
+    r.heading("Published from the schedule");
+    r.table(["Title", "Published", "Views", "Likes", "Comments"], done.map((p) => { const v = byId.get(videoIdOf(p.youtubeUrl)); return [p.title, when(p.publishDate, ""), n(v?.views), n(v?.likes), n(v?.comments)]; }), { right: [2, 3, 4], widths: { 0: 90 } });
+  }
+  r.save(`THSC Podcast Report ${fileRange(new Date(), new Date())}.pdf`);
 }

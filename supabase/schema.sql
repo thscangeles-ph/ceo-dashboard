@@ -172,6 +172,25 @@ create policy "personal sales: own files only" on public.personal_sales
   using (owner = auth.uid() and (public.full_access() or public.app_role() = 'marketing'))
   with check (owner = auth.uid() and (public.full_access() or public.app_role() = 'marketing'));
 
+-- Podcast Tracker & Scheduler: the YouTube schedule, daily channel snapshots (growth chart) and imported
+-- YouTube Studio exports. Shared by Admin, ManCom, Doctors and Marketing; Concierge can't see it.
+create table if not exists public.podcast_items (
+  key text primary key,
+  kind text not null check (kind in ('plan', 'snapshot', 'import')),
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users (id) on delete set null
+);
+alter table public.podcast_items enable row level security;
+drop trigger if exists touch_podcast_items on public.podcast_items;
+create trigger touch_podcast_items before insert or update on public.podcast_items
+  for each row execute function public.touch_updated_at();
+drop policy if exists "podcast: full access and marketing" on public.podcast_items;
+create policy "podcast: full access and marketing" on public.podcast_items
+  for all to authenticated
+  using (public.full_access() or public.app_role() = 'marketing')
+  with check (public.full_access() or public.app_role() = 'marketing');
+
 -- Live updates: the Inquiry Tracker and CRM refresh on everyone's screen when an inquiry changes.
 do $$
 begin
@@ -200,9 +219,9 @@ create or replace view public.sales_marketing as
   where public.app_role() = 'marketing' or public.full_access();
 
 -- Only signed-in users reach these; RLS and the view filters decide what each one sees.
-revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets, public.personal_sales, public.inquiries_marketing, public.sales_marketing from anon;
+revoke all on public.profiles, public.inquiries, public.sales_rows, public.sheets, public.personal_sales, public.podcast_items, public.inquiries_marketing, public.sales_marketing from anon;
 grant select, update on public.profiles to authenticated;
-grant select, insert, update, delete on public.inquiries, public.sales_rows, public.sheets, public.personal_sales to authenticated;
+grant select, insert, update, delete on public.inquiries, public.sales_rows, public.sheets, public.personal_sales, public.podcast_items to authenticated;
 grant select on public.inquiries_marketing, public.sales_marketing to authenticated;
 
 -- 4. Make yourself the first Admin -------------------------------------------

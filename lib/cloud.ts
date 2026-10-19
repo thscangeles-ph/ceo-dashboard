@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { AcquisitionSpend } from "./acquisition";
 import { spendKey } from "./acquisition";
 import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
+import type { ImportedFile, PodcastData, PodcastItem, PodcastKind, PodcastPlan, Snapshot } from "./podcast";
 import { sheetKey } from "./parse";
 
 /**
@@ -47,11 +48,11 @@ export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", mancom: "ManCo
 export const FULL_ACCESS: Role[] = ["admin", "mancom", "doctor"];
 export const isFullAccess = (role: Role | null | undefined) => Boolean(role && FULL_ACCESS.includes(role));
 export const ROLE_DETAIL: Record<Role, string> = {
-  admin: "Everything: own Sales Dashboard, Patient Acquisition Cost, CRM, Inquiry Tracker and Team",
+  admin: "Everything: own Sales Dashboard, Patient Acquisition Cost, CRM, Inquiry Tracker, Podcast Tracker & Scheduler and Team",
   mancom: "Everything, same as Admin",
   doctor: "Everything, same as Admin",
   concierge: "Inquiry Tracker (add and update inquiries) and CRM Dashboard, with names and numbers",
-  marketing: "Own Sales Dashboard; read-only Patient Acquisition Cost and CRM, patient details hidden",
+  marketing: "Own Sales Dashboard and the Podcast Tracker & Scheduler; read-only Patient Acquisition Cost and CRM, patient details hidden",
 };
 export type Profile = { id: string; email: string; full_name: string; role: Role | null };
 // Earlier versions called concierge accounts "staff".
@@ -217,6 +218,38 @@ export async function setMemberPassword(sb: SupabaseClient, id: string, password
   if (!response) throw new Error(friendly("Failed to fetch"));
   const result = (await response.json().catch(() => ({}))) as { error?: string; ok?: boolean };
   if (!response.ok || !result.ok) throw new Error(result.error || "Could not set the password.");
+}
+
+/**
+ * Podcast Tracker & Scheduler (podcast_items): the schedule, one channel snapshot per day for the growth
+ * chart, and imported YouTube Studio exports, shared by Admin, ManCom, Doctors and Marketing. Dates stay
+ * as text here (no revive), the way the tab uses them.
+ */
+export async function loadPodcast(sb: SupabaseClient): Promise<PodcastData & { missing: boolean }> {
+  const out: PodcastData = { plans: [], snapshots: [], imports: [] };
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from("podcast_items").select("kind, data").order("key").range(from, from + PAGE - 1);
+    if (error) {
+      // The table arrives with the updated supabase/schema.sql; until then the tab works without saving.
+      if (/does not exist|could not find the table/i.test(error.message)) return { ...out, missing: true };
+      throw new Error(friendly(error.message));
+    }
+    (data || []).forEach((r: { kind: PodcastKind; data: unknown }) => {
+      if (r.kind === "plan") out.plans.push(r.data as PodcastPlan);
+      else if (r.kind === "snapshot") out.snapshots.push(r.data as Snapshot);
+      else out.imports.push(r.data as ImportedFile);
+    });
+    if (!data || data.length < PAGE) return { ...out, missing: false };
+  }
+}
+export const podcastKey = (kind: PodcastKind, id: string) => `${kind}|${id}`;
+export async function savePodcastItem(sb: SupabaseClient, kind: PodcastKind, id: string, data: PodcastItem) {
+  const { error } = await sb.from("podcast_items").upsert({ key: podcastKey(kind, id), kind, data }, { onConflict: "key" });
+  if (error) throw new Error(friendly(error.message));
+}
+export async function deletePodcastItem(sb: SupabaseClient, kind: PodcastKind, id: string) {
+  const { error } = await sb.from("podcast_items").delete().eq("key", podcastKey(kind, id));
+  if (error) throw new Error(friendly(error.message));
 }
 
 export async function deleteInquiry(sb: SupabaseClient, key: string) {
