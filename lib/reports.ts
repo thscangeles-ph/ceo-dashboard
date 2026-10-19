@@ -178,8 +178,8 @@ export async function podcastReport(o: { channel: Channel | null; videos: Video[
   const open = o.plans.filter((p) => p.status !== "published").sort((a, b) => (a.publishDate || a.recordDate || "9999").localeCompare(b.publishDate || b.recordDate || "9999"));
   r.heading("Schedule: not yet published", `${count(open.length)} planned upload${open.length === 1 ? "" : "s"}; ${count(o.plans.filter((p) => o.today && planAlert(p, o.today)).length)} need attention (recording or publish date has passed).`);
   if (open.length) {
-    r.table(["Title", "Format", "Status", "Recording", "Publish on YouTube", "Guest", "Assigned to"],
-      open.map((p) => [`${p.title}${o.today && planAlert(p, o.today) ? ` (${planAlert(p, o.today)})` : ""}`, label(p.format, PLAN_FORMATS), label(p.status, PLAN_STATUSES), when(p.recordDate, p.recordTime), when(p.publishDate, p.publishTime), p.guest || "-", p.assignedTo || "-"]),
+    r.table(["Title", "Format", "Status", "Recording", "Publish on YouTube", "Guest"],
+      open.map((p) => [`${p.title}${o.today && planAlert(p, o.today) ? ` (${planAlert(p, o.today)})` : ""}`, label(p.format, PLAN_FORMATS), label(p.status, PLAN_STATUSES), when(p.recordDate, p.recordTime), when(p.publishDate, p.publishTime), p.guest || "-"]),
       { fontSize: 7.5, widths: { 0: 50 } });
   }
   const byId = new Map(o.videos.map((v) => [v.id, v]));

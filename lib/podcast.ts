@@ -90,7 +90,6 @@ export type PodcastPlan = {
   publishDate: string;
   publishTime: string;
   location: string;
-  assignedTo: string;
   youtubeUrl: string;
   notes: string;
   createdBy?: string;
@@ -101,7 +100,7 @@ export type PodcastPlan = {
 export const newPlan = (date = ""): PodcastPlan => ({
   id: `plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   title: "", format: "episode", status: date ? "scheduled" : "idea", guest: "", host: "",
-  recordDate: date, recordTime: "", publishDate: "", publishTime: "", location: "", assignedTo: "", youtubeUrl: "", notes: "",
+  recordDate: date, recordTime: "", publishDate: "", publishTime: "", location: "", youtubeUrl: "", notes: "",
 });
 
 /** The video ID in a YouTube link (watch?v=, youtu.be/, /shorts/, /live/, /embed/) or a bare 11-character ID. */

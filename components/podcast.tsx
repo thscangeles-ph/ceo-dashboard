@@ -584,7 +584,7 @@ function Scheduler({ plans, videos, today, canEdit, actor, onSave, onDelete }: {
         <div className="panel trk-panel">
           <div className="trk-scroll">
             <table className="pod-plans">
-              <thead><tr><th>Title</th><th>Status</th><th>Recording</th><th>Publish on YouTube</th><th>Guest</th><th>Assigned to</th><th className="num">Views</th><th /></tr></thead>
+              <thead><tr><th>Title</th><th>Status</th><th>Recording</th><th>Publish on YouTube</th><th>Guest</th><th className="num">Views</th><th /></tr></thead>
               <tbody>
                 {list.length ? list.map((p) => {
                   const v = videoOf(p), alert = today ? planAlert(p, today) : "";
@@ -595,12 +595,11 @@ function Scheduler({ plans, videos, today, canEdit, actor, onSave, onDelete }: {
                       <td>{p.recordDate ? `${dayText(p.recordDate)}${p.recordTime ? ` · ${timeText(p.recordTime)}` : ""}` : "—"}{p.location && <small className="pod-sub">{p.location}</small>}</td>
                       <td>{p.publishDate ? `${dayText(p.publishDate)}${p.publishTime ? ` · ${timeText(p.publishTime)}` : ""}` : "—"}</td>
                       <td className="name">{p.guest || "—"}</td>
-                      <td className="name">{p.assignedTo || "—"}</td>
                       <td className="num">{v ? <a href={v.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{show(v.views)}</a> : p.youtubeUrl ? <a href={p.youtubeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Open</a> : "—"}</td>
                       <td><span className="row-edit">{canEdit ? <><Pencil size={13} />Edit</> : "View"}</span></td>
                     </tr>
                   );
-                }) : <tr><td colSpan={8} className="empty-note">{plans.length ? "Nothing in this view." : canEdit ? "Nothing scheduled yet. Use Add to schedule, or click a day in the calendar." : "Nothing scheduled yet."}</td></tr>}
+                }) : <tr><td colSpan={7} className="empty-note">{plans.length ? "Nothing in this view." : canEdit ? "Nothing scheduled yet. Use Add to schedule, or click a day in the calendar." : "Nothing scheduled yet."}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -682,7 +681,6 @@ function PlanEditor({ plan, isNew, videos, plans, canEdit, actor, onClose, onSav
                     <label><span>Status</span><select value={form.status} onChange={(e) => set("status", e.target.value as PlanStatus)}>{PLAN_STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></label>
                     <label><span>Guest (doctor)</span><input value={form.guest} onChange={(e) => set("guest", e.target.value)} placeholder="e.g. Dr. Santos" /></label>
                     <label><span>Host</span><input value={form.host} onChange={(e) => set("host", e.target.value)} /></label>
-                    <label className="full"><span>Assigned to</span><input value={form.assignedTo} onChange={(e) => set("assignedTo", e.target.value)} placeholder="Who prepares, edits or uploads it" /></label>
                   </div>
                 </fieldset>
                 <fieldset>
