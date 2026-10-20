@@ -10,8 +10,8 @@ import { analyzeFeedback, buildSurvey, dayText, feedbackFindings, monthText, pct
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
 const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
-// Rating points, best first: brand black and gold for satisfied, beige for neutral, muted reds for dissatisfied.
-const POINT_COLOR: Record<number, string> = { 5: "var(--s1)", 4: "var(--s2)", 3: "var(--neutral)", 2: "#b4533c", 1: "#7f1d1d" };
+// Rating points, best first: Very Satisfied green, Satisfied light green, Neutral yellow, Dissatisfied red, Very Dissatisfied dark red.
+const POINT_COLOR: Record<number, string> = { 5: "#2e7d32", 4: "#9ccc65", 3: "#f4c430", 2: "#d32f2f", 1: "#7f1d1d" };
 const TONE_ICON = { ok: CheckCircle2, watch: Eye, info: Info };
 const num = (v: number) => v.toLocaleString("en-PH");
 const day = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
