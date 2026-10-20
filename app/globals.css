@@ -653,7 +653,8 @@ table.pod-videos, table.pod-plans { min-width: 860px; }
 .finding.info { border-left: 4px solid var(--line); }
 .finding.info .label svg { color: var(--ink-soft); }
 td.fb-bad { color: #9b2c1f; font-weight: 700; }
-.fb-profile { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.fb-profile { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+@media (max-width: 600px) { .fb-profile { grid-template-columns: 1fr; } }
 .fb-profile > .panel + .panel { margin-top: 0; }
 table.fb-follow { min-width: 820px; }
 .fb-follow td { vertical-align: top; }
@@ -670,27 +671,22 @@ table.fb-follow { min-width: 820px; }
 .fb-comments p { margin: 4px 0 0; font-size: .9rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .fb-comment-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .74rem; color: var(--ink-soft); }
 @media (max-width: 600px) { .fb-comment-filters .trk-search input { min-width: 0; width: 100%; } }
-/* Patient Feedback: satisfaction bars */
 .fb-legend { margin: 0 0 14px; }
-.fb-likert { display: block; width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border-radius: 6px; }
-button.fb-likert { cursor: pointer; }
-button.fb-likert:hover { background: color-mix(in srgb, var(--watch) 12%, transparent); }
-.fb-likert.selected { background: var(--callout); box-shadow: inset 3px 0 0 var(--watch); }
-.fb-likert.total { border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 6px; padding-bottom: 12px; }
-.fb-likert.total .fb-likert-name { font-weight: 700; }
-.fb-likert-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; margin-bottom: 5px; }
-.fb-likert-name { font-size: .88rem; font-weight: 600; overflow-wrap: anywhere; }
-.fb-likert-meta { font-family: var(--font-mono-stack); font-size: .76rem; color: var(--ink-soft); white-space: nowrap; }
-.fb-likert-bar { display: flex; height: 22px; gap: 2px; border-radius: 4px; overflow: hidden; background: var(--paper); }
-.fb-likert-bar span { display: flex; align-items: center; justify-content: center; font-family: var(--font-mono-stack); font-size: .72rem; font-weight: 700; min-width: 3px; overflow: hidden; white-space: nowrap; }
-.fb-likert-bar em { align-self: center; padding-left: 8px; font-size: .74rem; color: var(--ink-soft); font-style: normal; }
-.fb-likert.small { padding: 6px 10px; }
-.fb-likert.small .fb-likert-name { font-weight: 500; font-size: .82rem; line-height: 1.35; }
-.fb-likert.small .fb-likert-bar { height: 16px; }
-.fb-likert.small .fb-likert-bar span { font-size: .66rem; }
-.fb-likert.low .fb-likert-name { color: #7f1d1d; }
 .fb-service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; align-items: start; }
 .fb-service-grid > .panel + .panel { margin-top: 0; }
 .fb-service .queue-head { margin-bottom: 8px; }
 .fb-service-meta { font-family: var(--font-mono-stack); font-size: .76rem; color: var(--ink-soft); }
 @media (max-width: 600px) { .fb-service-grid { grid-template-columns: 1fr; } }
+/* Patient Feedback: column charts */
+.fb-scroll { overflow-x: auto; overflow-y: hidden; }
+.fb-columns .recharts-wrapper { cursor: pointer; }
+.fb-tip { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: 320px; box-shadow: 0 6px 18px rgba(27, 25, 21, .08); }
+.fb-tip strong { display: block; margin-bottom: 6px; line-height: 1.35; white-space: normal; }
+.fb-tip div { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.fb-tip i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.fb-tip b { margin-left: auto; padding-left: 12px; font-family: var(--font-mono-stack); font-weight: 600; white-space: nowrap; }
+.fb-qlist { list-style: none; margin: 10px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); display: grid; gap: 5px; }
+.fb-qlist li { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; font-size: .8rem; line-height: 1.35; align-items: baseline; }
+.fb-qlist b { font-family: var(--font-mono-stack); color: var(--ink-soft); }
+.fb-qlist em { font-style: normal; font-family: var(--font-mono-stack); font-size: .74rem; color: var(--ink-soft); white-space: nowrap; }
+.fb-qlist li.low span, .fb-qlist li.low em { color: #7f1d1d; font-weight: 600; }

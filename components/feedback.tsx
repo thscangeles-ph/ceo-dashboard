@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Eye, Info, MessageSquareText, RefreshCw, Search, Sheet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { RankedBars } from "@/components/charts";
 import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
@@ -190,37 +189,37 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
 
           <section>
             <h2>By service</h2>
-            <p className="section-note">The share of all ratings each service received, from Very Satisfied to Very Dissatisfied (N/A left out). Click a service to see only its responses.</p>
+            <p className="section-note">The share of each service&apos;s ratings, from Very Satisfied (bottom) to Very Dissatisfied (top); N/A is left out. Under each column: % satisfied and responses. Click a column to see only that service.</p>
             <div className="panel">
               <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
-              {a.services.length > 1 && (
-                <Likert total percent name="All services" counts={sumCounts(a.services.flatMap((x) => x.questions))} points={pointsOf(a.services[0]?.questions[0]?.column.labels)}
-                  meta={`${pctText(t.csat)} satisfied · ${num(t.responses)} responses${t.recAnswers ? ` · ${pctText(t.recommend)} recommend` : ""}`} />
-              )}
-              {a.services.map((x) => (
-                <Likert key={x.section.name} percent name={x.section.name} counts={sumCounts(x.questions)} points={pointsOf(x.questions[0]?.column.labels)} selected={filters.service === x.section.name}
-                  meta={`${pctText(x.csat)} satisfied · ${num(x.responses)} response${x.responses === 1 ? "" : "s"}${x.recAnswers ? ` · ${pctText(x.recommend)} recommend` : ""}`}
-                  onClick={() => setFilters((f) => ({ ...f, service: f.service === x.section.name ? "" : x.section.name }))} />
-              ))}
-              {!a.services.length && <p className="empty-note">No ratings in this period.</p>}
+              {a.services.length ? (
+                <ServiceColumns points={pointsOf(a.services[0]?.questions[0]?.column.labels)} selected={filters.service}
+                  rows={[...(a.services.length > 1 ? [{ name: "All services", counts: sumCounts(a.services.flatMap((x) => x.questions)), sub: `${pctText(t.csat)} · ${num(t.responses)}` }] : []),
+                    ...a.services.map((x) => ({ name: x.section.name, counts: sumCounts(x.questions), sub: `${pctText(x.csat)} · ${num(x.responses)}` }))]}
+                  onSelect={(name) => setFilters((f) => ({ ...f, service: name === "All services" || f.service === name ? "" : name }))} />
+              ) : <p className="empty-note">No ratings in this period.</p>}
             </div>
           </section>
 
           <section>
             <h2>Ratings by question</h2>
-            <p className="section-note">Every question of each service, like the CHARTS &amp; TABLE tab. Hover a bar for the number of patients; the lowest-rated question of each service is marked.</p>
+            <p className="section-note">Each service&apos;s questions, like the CHARTS &amp; TABLE tab: how many patients gave each answer. Hover a column for the question and its numbers; the questions are listed under each chart.</p>
             <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
             <div className="fb-service-grid">
               {a.services.map((x) => {
-                const points = pointsOf(x.questions[0]?.column.labels);
                 const lowest = Math.min(...x.questions.map((q) => q.csat ?? 1));
                 return (
                   <div key={x.section.name} className="panel fb-service">
                     <div className="queue-head"><h3>{x.section.name}</h3><span className="fb-service-meta">{pctText(x.csat)} satisfied · {num(x.responses)} response{x.responses === 1 ? "" : "s"}</span></div>
-                    {x.questions.map((q) => (
-                      <Likert key={q.column.index} small name={q.column.text} counts={q.counts} points={points} low={q.csat !== null && q.csat < 1 && q.csat === lowest}
-                        meta={q.answers ? `${pctText(q.csat)}${q.na ? ` · ${q.na} N/A` : ""}` : q.na ? `All ${q.na} N/A` : "No answers"} />
-                    ))}
+                    <QuestionColumns questions={x.questions} points={pointsOf(x.questions[0]?.column.labels)} />
+                    <ol className="fb-qlist">
+                      {x.questions.map((q, i) => (
+                        <li key={q.column.index} className={q.csat !== null && q.csat < 1 && q.csat === lowest ? "low" : undefined}>
+                          <b>Q{i + 1}</b><span>{q.column.text.replace(/^\d+\.\s*/, "")}</span>
+                          <em>{q.answers ? pctText(q.csat) : "—"}{q.na ? ` · ${q.na} N/A` : ""}{q.csat !== null && q.csat < 1 && q.csat === lowest ? " · lowest" : ""}</em>
+                        </li>
+                      ))}
+                    </ol>
                   </div>
                 );
               })}
@@ -235,8 +234,8 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
                 {a.profile.filter((p) => p.column !== survey.router).map((p) => (
                   <div key={p.column.index} className="panel">
                     <h3>{p.column.text}</h3>
-                    <RankedBars label={p.column.text} color="var(--s2)" format={(v) => `${num(v)} · ${pctText(v / p.answered)}`} items={p.items.slice(0, 10).map((i) => ({ name: i.name, value: i.value }))} />
-                    {p.multiple > 0 && <p className="drill-meta">{num(p.multiple)} of {num(p.answered)} chose more than one, so the bars add up to more than {num(p.answered)}.</p>}
+                    <CountColumns items={p.items} total={p.answered} />
+                    {p.multiple > 0 && <p className="drill-meta">{num(p.multiple)} of {num(p.answered)} chose more than one, so the columns add up to more than {num(p.answered)}.</p>}
                   </div>
                 ))}
               </div>
@@ -304,33 +303,114 @@ const sumCounts = (questions: { counts: Record<number, number> }[]) => {
   questions.forEach((q) => Object.entries(q.counts).forEach(([p, n]) => { out[Number(p)] = (out[Number(p)] || 0) + n; }));
   return out;
 };
-// Label colors that stay readable on each fill.
-const POINT_TEXT: Record<number, string> = { 5: "var(--s1-text)", 4: "#ffffff", 3: "var(--neutral-text)", 2: "#ffffff", 1: "#ffffff" };
 
 function AnswerLegend({ points }: { points: Point[] }) {
   return <div className="mix-legend fb-legend">{points.map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}</div>;
 }
 
-/** One service's or question's answers as a 100% bar, best answer first, with the count written in each part that has room. */
-function Likert({ name, counts, points, meta, onClick, selected, low, small, total, percent }: {
-  name: string; counts: Record<number, number>; points: Point[]; meta: string; onClick?: () => void; selected?: boolean; low?: boolean; small?: boolean; total?: boolean;
-  /** Write shares instead of counts in the bar (a service's bar counts every rating, not patients). */
-  percent?: boolean;
-}) {
-  const sum = points.reduce((n, l) => n + (counts[l.p] || 0), 0);
-  const content = (
-    <>
-      <div className="fb-likert-head"><span className="fb-likert-name">{name}{low && <span className="fb-tag">Lowest</span>}</span><span className="fb-likert-meta">{meta}</span></div>
-      <div className="fb-likert-bar" role="img" aria-label={`${name}: ${points.filter((l) => counts[l.p]).map((l) => `${l.label} ${counts[l.p]}`).join(", ") || "no ratings"}`}>
-        {sum ? points.filter((l) => counts[l.p]).map((l) => {
-          const share = counts[l.p] / sum;
-          return <span key={l.p} title={`${l.label}: ${counts[l.p]} ${percent ? "ratings" : "patients"} (${Math.round(share * 100)}%)`} style={{ width: `${share * 100}%`, background: POINT_COLOR[l.p], color: POINT_TEXT[l.p] }}>{share >= (small ? 0.09 : 0.06) ? (percent ? `${Math.round(share * 100)}%` : counts[l.p]) : ""}</span>;
-        }) : <em>No ratings</em>}
-      </div>
-    </>
+/** Splits a category name into short lines for the axis under a column. */
+function wrap(text: string, max: number, lines = 3) {
+  const out: string[] = [];
+  let line = "";
+  text.split(/\s+/).forEach((word) => {
+    if ((line ? `${line} ${word}` : word).length > max && line) { out.push(line); line = word; } else line = line ? `${line} ${word}` : word;
+  });
+  if (line) out.push(line);
+  return out.length > lines ? [...out.slice(0, lines - 1), `${out.slice(lines - 1).join(" ").slice(0, max - 1)}…`] : out;
+}
+/** An axis label under each column: the name on up to three lines, and an optional bold line below it. */
+function columnTick(max: number, subOf?: (name: string) => string | undefined, selected?: string) {
+  return function Tick({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { value?: string } }) {
+    const name = String(payload?.value ?? ""), sub = subOf?.(name), lines = wrap(name, max);
+    return (
+      <g transform={`translate(${Number(x)},${Number(y)})`}>
+        <text textAnchor="middle" fill={name === selected ? "var(--ink)" : "var(--ink-soft)"} fontSize={11} fontWeight={name === selected ? 700 : 400}>
+          {lines.map((l, i) => <tspan key={i} x={0} dy={i ? 13 : 12}>{l}</tspan>)}
+          {sub && <tspan x={0} dy={15} fill="var(--ink)" fontWeight={700} fontFamily="var(--font-mono-stack)">{sub}</tspan>}
+        </text>
+      </g>
+    );
+  };
+}
+type TipItem = { dataKey?: unknown; value?: unknown; payload?: Record<string, unknown> };
+/** Tooltip listing every answer, best first, with patients (or ratings) and the share. */
+function AnswerTip({ active, payload, points, title, unit }: { active?: boolean; payload?: TipItem[]; points: Point[]; title: (row: Record<string, unknown>) => string; unit: string }) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  const counts = points.map((p) => ({ ...p, n: Number(row[`c${p.p}`] || 0) }));
+  const sum = counts.reduce((s, c) => s + c.n, 0);
+  return (
+    <div className="fb-tip">
+      <strong>{title(row)}</strong>
+      {counts.map((c) => <div key={c.p}><i style={{ background: POINT_COLOR[c.p] }} />{c.label}<b>{c.n} {unit} · {sum ? Math.round((c.n / sum) * 100) : 0}%</b></div>)}
+      {Number(row.na) > 0 && <div className="muted">N/A<b>{String(row.na)}</b></div>}
+    </div>
   );
-  const cls = `fb-likert${small ? " small" : ""}${total ? " total" : ""}${selected ? " selected" : ""}${low ? " low" : ""}`;
-  return onClick
-    ? <button type="button" className={`${cls} is-clickable`} onClick={onClick} aria-pressed={selected} title="Click to see only this service">{content}</button>
-    : <div className={cls}>{content}</div>;
+}
+type ChartState = { activeTooltipIndex?: number | string | null; activeLabel?: string | number } | null | undefined;
+
+/** Services as 100% stacked columns, Very Satisfied at the bottom. */
+function ServiceColumns({ rows, points, selected, onSelect }: { rows: { name: string; counts: Record<number, number>; sub: string }[]; points: Point[]; selected: string; onSelect: (name: string) => void }) {
+  const data = rows.map((r) => {
+    const sum = points.reduce((s, p) => s + (r.counts[p.p] || 0), 0) || 1;
+    return { name: r.name, sub: r.sub, ...Object.fromEntries(points.flatMap((p) => [[`p${p.p}`, ((r.counts[p.p] || 0) / sum) * 100], [`c${p.p}`, r.counts[p.p] || 0]])) };
+  });
+  const subs = new Map(rows.map((r) => [r.name, r.sub]));
+  return (
+    <div className="fb-scroll">
+      <div className="chart-box fb-columns" style={{ minWidth: rows.length * 92, height: 360 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="22%"
+            onClick={(state: ChartState) => { const i = Number(state?.activeTooltipIndex); if (Number.isInteger(i) && data[i]) onSelect(data[i].name); }}>
+            <CartesianGrid vertical={false} stroke="var(--line)" />
+            <XAxis dataKey="name" interval={0} height={74} tickLine={false} axisLine={{ stroke: "var(--line)" }} tick={columnTick(13, (n) => subs.get(n), selected)} />
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} width={40} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} />
+            <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} content={<AnswerTip points={points} unit="ratings" title={(r) => `${r.name} · ${r.sub} responses`} />} />
+            {[...points].map((p, i, list) => <Bar key={p.p} dataKey={`p${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} cursor="pointer" radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} />)}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/** One service's questions as stacked columns of patients (Q1, Q2 …), Very Satisfied at the bottom. */
+function QuestionColumns({ questions, points }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[] }) {
+  const data = questions.map((q, i) => ({ label: `Q${i + 1}`, text: q.column.text, na: q.na, ...Object.fromEntries(points.map((p) => [`c${p.p}`, q.counts[p.p] || 0])) }));
+  return (
+    <div className="chart-box" style={{ height: 230 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="18%">
+          <CartesianGrid vertical={false} stroke="var(--line)" />
+          <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval={0} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+          <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
+          {points.map((p, i, list) => <Bar key={p.p} dataKey={`c${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} maxBarSize={44} />)}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Plain columns for a choice question (gender, age …), each labelled with its count. Ranges such as ages keep their
+ * natural order; beyond the eight biggest answers the rest are combined as "Other". */
+function CountColumns({ items: all, total }: { items: { name: string; value: number }[]; total: number }) {
+  const ranges = all.every((i) => /^\d/.test(i.name));
+  const sorted = ranges ? [...all].sort((x, y) => parseFloat(x.name) - parseFloat(y.name)) : all;
+  const items = sorted.length > 8 ? [...sorted.slice(0, 7), { name: `Other (${sorted.length - 7} kinds)`, value: sorted.slice(7).reduce((n, i) => n + i.value, 0) }] : sorted;
+  return (
+    <div className="fb-scroll">
+      <div className="chart-box" style={{ minWidth: items.length * 64, height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={items} margin={{ top: 20, right: 4, bottom: 0, left: 0 }} barCategoryGap="20%">
+            <CartesianGrid vertical={false} stroke="var(--line)" />
+            <XAxis dataKey="name" interval={0} height={60} tickLine={false} axisLine={{ stroke: "var(--line)" }} tick={columnTick(items.length > 4 ? 10 : 16)} />
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+            <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(v) => [`${num(Number(v))} (${pctText(Number(v) / total)})`, "Patients"]} />
+            <Bar dataKey="value" fill="var(--s2)" radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false} label={{ position: "top", fill: "var(--ink)", fontSize: 11, fontFamily: "var(--font-mono-stack)" }} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
