@@ -190,65 +190,41 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
 
           <section>
             <h2>By service</h2>
-            <p className="section-note">Each patient rates the service they availed. Click a service to see only its responses.</p>
+            <p className="section-note">The share of all ratings each service received, from Very Satisfied to Very Dissatisfied (N/A left out). Click a service to see only its responses.</p>
             <div className="panel">
-              <div className="table-scroll">
-                <table className="acq-types">
-                  <tbody>
-                    <tr><th>Service</th><th className="num">Responses</th><th className="num">Very satisfied</th><th className="num">Satisfied</th><th className="num">Average</th><th className="num">Dissatisfied ratings</th><th className="num">Would recommend</th><th className="num">Comments</th></tr>
-                    {a.services.map((s) => (
-                      <tr key={s.section.name} className={`is-clickable${filters.service === s.section.name ? " selected" : ""}`} tabIndex={0} role="button" aria-pressed={filters.service === s.section.name}
-                        onClick={() => setFilters((f) => ({ ...f, service: f.service === s.section.name ? "" : s.section.name }))}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFilters((f) => ({ ...f, service: f.service === s.section.name ? "" : s.section.name })); } }}>
-                        <td className="name">{s.section.name}</td>
-                        <td className="num">{num(s.responses)}</td>
-                        <td className="num">{pctText(s.verySatisfied)}</td>
-                        <td className="num strong">{pctText(s.csat)}</td>
-                        <td className="num">{s.average === null ? "—" : s.average.toFixed(2)}</td>
-                        <td className={`num${s.dissatisfied ? " fb-bad" : ""}`}>{num(s.dissatisfied)}</td>
-                        <td className="num">{s.recAnswers ? `${pctText(s.recommend)}${s.rec.Maybe || s.rec.No ? ` (${s.rec.Maybe + s.rec.No} not yes)` : ""}` : "—"}</td>
-                        <td className="num">{num(s.comments)}</td>
-                      </tr>
-                    ))}
-                    {!a.services.length && <tr><td colSpan={8} className="empty-note">No ratings in this period.</td></tr>}
-                    {a.services.length > 1 && (
-                      <tr className="total"><td className="name">ALL SERVICES</td><td className="num">{num(t.responses)}</td><td className="num">{pctText(t.verySatisfied)}</td><td className="num">{pctText(t.csat)}</td><td className="num">{t.average === null ? "—" : t.average.toFixed(2)}</td><td className="num">{num(t.dissatisfied)}</td><td className="num">{pctText(t.recommend)}</td><td className="num">{num(t.comments)}</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
+              {a.services.length > 1 && (
+                <Likert total percent name="All services" counts={sumCounts(a.services.flatMap((x) => x.questions))} points={pointsOf(a.services[0]?.questions[0]?.column.labels)}
+                  meta={`${pctText(t.csat)} satisfied · ${num(t.responses)} responses${t.recAnswers ? ` · ${pctText(t.recommend)} recommend` : ""}`} />
+              )}
+              {a.services.map((x) => (
+                <Likert key={x.section.name} percent name={x.section.name} counts={sumCounts(x.questions)} points={pointsOf(x.questions[0]?.column.labels)} selected={filters.service === x.section.name}
+                  meta={`${pctText(x.csat)} satisfied · ${num(x.responses)} response${x.responses === 1 ? "" : "s"}${x.recAnswers ? ` · ${pctText(x.recommend)} recommend` : ""}`}
+                  onClick={() => setFilters((f) => ({ ...f, service: f.service === x.section.name ? "" : x.section.name }))} />
+              ))}
+              {!a.services.length && <p className="empty-note">No ratings in this period.</p>}
             </div>
           </section>
 
           <section>
             <h2>Ratings by question</h2>
-            <p className="section-note">How many patients chose each answer, per service, like the CHARTS &amp; TABLE tab. Satisfied % = Very Satisfied + Satisfied, out of the answers that weren&apos;t N/A.</p>
-            {a.services.map((s) => {
-              const points = pointsOf(s.questions[0]?.column.labels);
-              const lowest = Math.min(...s.questions.map((q) => q.csat ?? 1));
-              return (
-                <details key={s.section.name} className="panel fb-service" open>
-                  <summary><h3>{s.section.name}</h3><span>{num(s.responses)} response{s.responses === 1 ? "" : "s"} · {pctText(s.csat)} satisfied</span></summary>
-                  <div className="table-scroll">
-                    <table className="fb-questions">
-                      <thead><tr><th>Question</th>{points.map((p) => <th key={p.p} className="num">{p.label}</th>)}<th className="num">N/A</th><th className="num">Satisfied</th><th className="fb-dist-head">Answers</th></tr></thead>
-                      <tbody>
-                        {s.questions.map((q) => (
-                          <tr key={q.column.index} className={q.csat !== null && q.csat < 1 && q.csat === lowest ? "fb-low" : undefined}>
-                            <td className="name">{q.column.text}</td>
-                            {points.map((p) => <td key={p.p} className={`num${p.p <= 2 && q.counts[p.p] ? " fb-bad" : ""}`}>{q.counts[p.p] || 0}</td>)}
-                            <td className="num muted">{q.na}</td>
-                            <td className="num strong">{pctText(q.csat)}</td>
-                            <td className="fb-dist-cell"><Distribution counts={q.counts} labels={points} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+            <p className="section-note">Every question of each service, like the CHARTS &amp; TABLE tab. Hover a bar for the number of patients; the lowest-rated question of each service is marked.</p>
+            <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
+            <div className="fb-service-grid">
+              {a.services.map((x) => {
+                const points = pointsOf(x.questions[0]?.column.labels);
+                const lowest = Math.min(...x.questions.map((q) => q.csat ?? 1));
+                return (
+                  <div key={x.section.name} className="panel fb-service">
+                    <div className="queue-head"><h3>{x.section.name}</h3><span className="fb-service-meta">{pctText(x.csat)} satisfied · {num(x.responses)} response{x.responses === 1 ? "" : "s"}</span></div>
+                    {x.questions.map((q) => (
+                      <Likert key={q.column.index} small name={q.column.text} counts={q.counts} points={points} low={q.csat !== null && q.csat < 1 && q.csat === lowest}
+                        meta={q.answers ? `${pctText(q.csat)}${q.na ? ` · ${q.na} N/A` : ""}` : q.na ? `All ${q.na} N/A` : "No answers"} />
+                    ))}
                   </div>
-                </details>
-              );
-            })}
-            <div className="mix-legend">{pointsOf(a.services[0]?.questions[0]?.column.labels).map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}</div>
+                );
+              })}
+            </div>
           </section>
 
           {a.profile.length > 0 && (
@@ -322,13 +298,39 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
   );
 }
 
-/** One question's answers as a 100% bar, best first. */
-function Distribution({ counts, labels }: { counts: Record<number, number>; labels: { p: number; label: string }[] }) {
-  const total = labels.reduce((n, l) => n + (counts[l.p] || 0), 0);
-  if (!total) return <span className="muted">—</span>;
-  return (
-    <div className="fb-dist" role="img" aria-label={labels.filter((l) => counts[l.p]).map((l) => `${l.label} ${counts[l.p]}`).join(", ")}>
-      {labels.filter((l) => counts[l.p]).map((l) => <span key={l.p} title={`${l.label}: ${counts[l.p]}`} style={{ width: `${(counts[l.p] / total) * 100}%`, background: POINT_COLOR[l.p] }} />)}
-    </div>
+type Point = { p: number; label: string };
+const sumCounts = (questions: { counts: Record<number, number> }[]) => {
+  const out: Record<number, number> = {};
+  questions.forEach((q) => Object.entries(q.counts).forEach(([p, n]) => { out[Number(p)] = (out[Number(p)] || 0) + n; }));
+  return out;
+};
+// Label colors that stay readable on each fill.
+const POINT_TEXT: Record<number, string> = { 5: "var(--s1-text)", 4: "#ffffff", 3: "var(--neutral-text)", 2: "#ffffff", 1: "#ffffff" };
+
+function AnswerLegend({ points }: { points: Point[] }) {
+  return <div className="mix-legend fb-legend">{points.map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}</div>;
+}
+
+/** One service's or question's answers as a 100% bar, best answer first, with the count written in each part that has room. */
+function Likert({ name, counts, points, meta, onClick, selected, low, small, total, percent }: {
+  name: string; counts: Record<number, number>; points: Point[]; meta: string; onClick?: () => void; selected?: boolean; low?: boolean; small?: boolean; total?: boolean;
+  /** Write shares instead of counts in the bar (a service's bar counts every rating, not patients). */
+  percent?: boolean;
+}) {
+  const sum = points.reduce((n, l) => n + (counts[l.p] || 0), 0);
+  const content = (
+    <>
+      <div className="fb-likert-head"><span className="fb-likert-name">{name}{low && <span className="fb-tag">Lowest</span>}</span><span className="fb-likert-meta">{meta}</span></div>
+      <div className="fb-likert-bar" role="img" aria-label={`${name}: ${points.filter((l) => counts[l.p]).map((l) => `${l.label} ${counts[l.p]}`).join(", ") || "no ratings"}`}>
+        {sum ? points.filter((l) => counts[l.p]).map((l) => {
+          const share = counts[l.p] / sum;
+          return <span key={l.p} title={`${l.label}: ${counts[l.p]} ${percent ? "ratings" : "patients"} (${Math.round(share * 100)}%)`} style={{ width: `${share * 100}%`, background: POINT_COLOR[l.p], color: POINT_TEXT[l.p] }}>{share >= (small ? 0.09 : 0.06) ? (percent ? `${Math.round(share * 100)}%` : counts[l.p]) : ""}</span>;
+        }) : <em>No ratings</em>}
+      </div>
+    </>
   );
+  const cls = `fb-likert${small ? " small" : ""}${total ? " total" : ""}${selected ? " selected" : ""}${low ? " low" : ""}`;
+  return onClick
+    ? <button type="button" className={`${cls} is-clickable`} onClick={onClick} aria-pressed={selected} title="Click to see only this service">{content}</button>
+    : <div className={cls}>{content}</div>;
 }

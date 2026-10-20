@@ -653,24 +653,6 @@ table.pod-videos, table.pod-plans { min-width: 860px; }
 .finding.info { border-left: 4px solid var(--line); }
 .finding.info .label svg { color: var(--ink-soft); }
 td.fb-bad { color: #9b2c1f; font-weight: 700; }
-.fb-service { padding: 0; }
-.fb-service + .fb-service { margin-top: 14px; }
-.fb-service summary { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; padding: 14px 20px; cursor: pointer; list-style: none; }
-.fb-service summary::-webkit-details-marker { display: none; }
-.fb-service summary::before { content: "▸"; color: var(--ink-soft); margin-right: -6px; }
-.fb-service[open] summary::before { content: "▾"; }
-.fb-service summary h3 { margin: 0; flex: 1; font-size: .95rem; }
-.fb-service summary span { font-size: .8rem; color: var(--ink-soft); font-family: var(--font-mono-stack); }
-.fb-service .table-scroll { padding: 0 20px 14px; }
-table.fb-questions { min-width: 820px; }
-.fb-questions td.name { min-width: 240px; font-size: .84rem; }
-.fb-questions th.num { white-space: normal; min-width: 52px; vertical-align: bottom; }
-.fb-questions td.num, .fb-questions th.num { padding-left: 6px; padding-right: 6px; }
-.fb-questions tr.fb-low td { background: var(--danger-bg); }
-.fb-dist-head { min-width: 110px; width: 130px; }
-.fb-dist-cell { vertical-align: middle; }
-.fb-dist { display: flex; height: 12px; border-radius: 3px; overflow: hidden; gap: 1px; background: var(--paper); width: 110px; }
-.fb-dist span { display: block; height: 100%; }
 .fb-profile { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .fb-profile > .panel + .panel { margin-top: 0; }
 table.fb-follow { min-width: 820px; }
@@ -687,4 +669,28 @@ table.fb-follow { min-width: 820px; }
 .fb-comments li.low { border-left-color: #b4533c; background: var(--danger-bg); }
 .fb-comments p { margin: 4px 0 0; font-size: .9rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .fb-comment-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .74rem; color: var(--ink-soft); }
-@media (max-width: 600px) { .fb-service summary { padding: 12px 14px; } .fb-service .table-scroll { padding: 0 14px 12px; } .fb-comment-filters .trk-search input { min-width: 0; width: 100%; } }
+@media (max-width: 600px) { .fb-comment-filters .trk-search input { min-width: 0; width: 100%; } }
+/* Patient Feedback: satisfaction bars */
+.fb-legend { margin: 0 0 14px; }
+.fb-likert { display: block; width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border-radius: 6px; }
+button.fb-likert { cursor: pointer; }
+button.fb-likert:hover { background: color-mix(in srgb, var(--watch) 12%, transparent); }
+.fb-likert.selected { background: var(--callout); box-shadow: inset 3px 0 0 var(--watch); }
+.fb-likert.total { border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 6px; padding-bottom: 12px; }
+.fb-likert.total .fb-likert-name { font-weight: 700; }
+.fb-likert-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 14px; flex-wrap: wrap; margin-bottom: 5px; }
+.fb-likert-name { font-size: .88rem; font-weight: 600; overflow-wrap: anywhere; }
+.fb-likert-meta { font-family: var(--font-mono-stack); font-size: .76rem; color: var(--ink-soft); white-space: nowrap; }
+.fb-likert-bar { display: flex; height: 22px; gap: 2px; border-radius: 4px; overflow: hidden; background: var(--paper); }
+.fb-likert-bar span { display: flex; align-items: center; justify-content: center; font-family: var(--font-mono-stack); font-size: .72rem; font-weight: 700; min-width: 3px; overflow: hidden; white-space: nowrap; }
+.fb-likert-bar em { align-self: center; padding-left: 8px; font-size: .74rem; color: var(--ink-soft); font-style: normal; }
+.fb-likert.small { padding: 6px 10px; }
+.fb-likert.small .fb-likert-name { font-weight: 500; font-size: .82rem; line-height: 1.35; }
+.fb-likert.small .fb-likert-bar { height: 16px; }
+.fb-likert.small .fb-likert-bar span { font-size: .66rem; }
+.fb-likert.low .fb-likert-name { color: #7f1d1d; }
+.fb-service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; align-items: start; }
+.fb-service-grid > .panel + .panel { margin-top: 0; }
+.fb-service .queue-head { margin-bottom: 8px; }
+.fb-service-meta { font-family: var(--font-mono-stack); font-size: .76rem; color: var(--ink-soft); }
+@media (max-width: 600px) { .fb-service-grid { grid-template-columns: 1fr; } }
