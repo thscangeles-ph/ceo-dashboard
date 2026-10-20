@@ -646,3 +646,45 @@ table.pod-videos, table.pod-plans { min-width: 860px; }
 /* The inquiry form types in capitals; the podcast schedule keeps titles and names as typed. */
 .pod-modal fieldset.modal-body { border: 0; margin: 0; min-width: 0; }
 .pod-modal .editor-grid .field-grid input:not([type=date]):not([type=time]), .pod-modal .editor-grid .field-grid textarea { text-transform: none; }
+
+/* Patient Feedback */
+.fb-steps { margin: 12px 0 0; padding-left: 20px; font-size: .86rem; line-height: 1.7; }
+.fb-findings { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.finding.info { border-left: 4px solid var(--line); }
+.finding.info .label svg { color: var(--ink-soft); }
+td.fb-bad { color: #9b2c1f; font-weight: 700; }
+.fb-service { padding: 0; }
+.fb-service + .fb-service { margin-top: 14px; }
+.fb-service summary { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; padding: 14px 20px; cursor: pointer; list-style: none; }
+.fb-service summary::-webkit-details-marker { display: none; }
+.fb-service summary::before { content: "▸"; color: var(--ink-soft); margin-right: -6px; }
+.fb-service[open] summary::before { content: "▾"; }
+.fb-service summary h3 { margin: 0; flex: 1; font-size: .95rem; }
+.fb-service summary span { font-size: .8rem; color: var(--ink-soft); font-family: var(--font-mono-stack); }
+.fb-service .table-scroll { padding: 0 20px 14px; }
+table.fb-questions { min-width: 820px; }
+.fb-questions td.name { min-width: 240px; font-size: .84rem; }
+.fb-questions th.num { white-space: normal; min-width: 52px; vertical-align: bottom; }
+.fb-questions td.num, .fb-questions th.num { padding-left: 6px; padding-right: 6px; }
+.fb-questions tr.fb-low td { background: var(--danger-bg); }
+.fb-dist-head { min-width: 110px; width: 130px; }
+.fb-dist-cell { vertical-align: middle; }
+.fb-dist { display: flex; height: 12px; border-radius: 3px; overflow: hidden; gap: 1px; background: var(--paper); width: 110px; }
+.fb-dist span { display: block; height: 100%; }
+.fb-profile { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.fb-profile > .panel + .panel { margin-top: 0; }
+table.fb-follow { min-width: 820px; }
+.fb-follow td { vertical-align: top; }
+.fb-follow td.name { white-space: normal; font-size: .84rem; }
+.fb-follow td.name div + div { margin-top: 4px; }
+.fb-said { min-width: 240px; max-width: 420px; }
+.fb-tag { display: inline-block; font-family: var(--font-sans-stack); font-size: .7rem; font-weight: 700; padding: 1px 6px; margin-left: 6px; background: #f6dcd5; color: #7f1d1d; border-radius: 3px; vertical-align: 1px; }
+.fb-follow .fb-tag { margin-left: 0; }
+.fb-comment-filters { margin: 0; align-items: flex-end; }
+.fb-comment-filters .remember { margin: 0 0 10px; text-transform: none; letter-spacing: 0; font-size: .82rem; }
+.fb-comments { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fb-comments li { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--s2); padding: 10px 14px; }
+.fb-comments li.low { border-left-color: #b4533c; background: var(--danger-bg); }
+.fb-comments p { margin: 4px 0 0; font-size: .9rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fb-comment-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .74rem; color: var(--ink-soft); }
+@media (max-width: 600px) { .fb-service summary { padding: 12px 14px; } .fb-service .table-scroll { padding: 0 14px 12px; } .fb-comment-filters .trk-search input { min-width: 0; width: 100%; } }

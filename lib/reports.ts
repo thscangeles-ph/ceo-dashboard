@@ -6,6 +6,8 @@ import { DUE_LABEL } from "./crm";
 import { effectiveResponded } from "./lead";
 import type { InquiryRow } from "./parse";
 import { createReport, fileRange } from "./pdf";
+import type { FeedbackSummary, Survey } from "./feedback";
+import { dayText as fbDay, pctText } from "./feedback";
 import type { Channel, PodcastPlan, Snapshot, Video } from "./podcast";
 import { engagementRate, episodeName, formatOf, FORMATS, localDay, PLAN_FORMATS, PLAN_STATUSES, planAlert, sumKnown, videoIdOf } from "./podcast";
 import type { NextStep } from "./tracker";
@@ -189,4 +191,46 @@ export async function podcastReport(o: { channel: Channel | null; videos: Video[
     r.table(["Title", "Published", "Views", "Likes", "Comments"], done.map((p) => { const v = byId.get(videoIdOf(p.youtubeUrl)); return [p.title, when(p.publishDate, ""), n(v?.views), n(v?.likes), n(v?.comments)]; }), { right: [2, 3, 4], widths: { 0: 90 } });
   }
   r.save(`THSC Podcast Report ${fileRange(new Date(), new Date())}.pdf`);
+}
+
+/** Patient Feedback: the survey results for the period and service chosen on the tab. */
+export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { findings: { label: string; text: string }[]; filters: string }) {
+  const t = a.totals;
+  const r = await createReport({ title: "Patient Feedback Report", period: a.period ? `Date of visit ${fbDay(a.period.from)} - ${fbDay(a.period.to)}` : "No responses in this period", filters: o.filters, landscape: true, confidential: true });
+  r.kpis([
+    { label: "Responses", value: count(t.responses), note: a.previous ? `${count(a.previous.responses)} in the previous period` : undefined },
+    { label: "Satisfied", value: pctText(t.csat, 1), note: "Very Satisfied or Satisfied", accent: true },
+    { label: "Very satisfied", value: pctText(t.verySatisfied, 1), note: t.average === null ? undefined : `Average ${t.average.toFixed(2)} of 5` },
+    { label: "Would recommend", value: pctText(t.recommend, 1), note: t.recAnswers ? `${t.rec.Yes} yes, ${t.rec.Maybe} maybe, ${t.rec.No} no` : undefined },
+    { label: "Needs follow-up", value: count(a.unhappy.length), note: "Responses with a Dissatisfied rating" },
+  ]);
+  if (o.findings.length) { r.heading("Interpretation & analysis"); r.findings(o.findings.map((f) => ({ label: f.label, value: "", text: f.text }))); }
+  if (a.trend.length > 1) {
+    r.heading(`By ${a.byMonth ? "month" : "week"} of visit`);
+    r.table([a.byMonth ? "Month" : "Week of", "Responses", "Satisfied", "Would recommend"], a.trend.map((x) => [x.label, count(x.responses), x.satisfied === null ? "-" : `${x.satisfied.toFixed(1)}%`, x.recommend === null ? "-" : `${x.recommend.toFixed(1)}%`]), { right: [1, 2, 3] });
+  }
+  r.heading("By service");
+  r.table(["Service", "Responses", "Very satisfied", "Satisfied", "Average", "Dissatisfied ratings", "Would recommend", "Comments"],
+    [...a.services.map((s) => [s.section.name, count(s.responses), pctText(s.verySatisfied), pctText(s.csat), s.average === null ? "-" : s.average.toFixed(2), count(s.dissatisfied), pctText(s.recommend), count(s.comments)]),
+      ...(a.services.length > 1 ? [["All services", count(t.responses), pctText(t.verySatisfied), pctText(t.csat), t.average === null ? "-" : t.average.toFixed(2), count(t.dissatisfied), pctText(t.recommend), count(t.comments)]] : [])],
+    { right: [1, 2, 3, 4, 5, 6, 7], boldLast: a.services.length > 1 });
+  a.services.forEach((s) => {
+    const labels = [5, 4, 3, 2, 1].map((p) => s.questions[0]?.column.labels?.[p] ?? String(p));
+    r.heading(`${s.section.name}: ${count(s.responses)} response${s.responses === 1 ? "" : "s"}, ${pctText(s.csat)} satisfied`);
+    r.table(["Question", ...labels, "N/A", "Satisfied"], s.questions.map((q) => [q.column.text, ...[5, 4, 3, 2, 1].map((p) => count(q.counts[p] || 0)), count(q.na), pctText(q.csat)]), { right: [1, 2, 3, 4, 5, 6, 7], widths: { 0: 120 }, fontSize: 7.5 });
+  });
+  const profile = a.profile.filter((p) => p.column !== survey.router);
+  if (profile.length) {
+    r.heading("Who answered");
+    profile.forEach((p) => r.table([p.column.text, "Responses", "Share"], p.items.map((i) => [i.name, count(i.value), pctText(i.value / p.answered)]), { right: [1, 2], widths: { 0: 120 } }));
+  }
+  if (a.unhappy.length) {
+    r.heading("Needs follow-up", "Responses with a Dissatisfied (or worse) rating. Sheet row = the response's row in the Google Sheet.");
+    r.table(["Date of visit", "Service", "Low ratings", "What they said", "Row"], a.unhappy.map((u) => [fbDay(u.response.visit), u.service || "-", u.low.map((l) => `${l.answer}: ${l.question}`).join("\n"), u.comments.join(" / ") || "-", u.response.row]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 90, 4: 14 } });
+  }
+  if (a.comments.length) {
+    r.heading("Comments & experiences", a.comments.length > 60 ? `The newest 60 of ${count(a.comments.length)}.` : undefined);
+    r.table(["Date of visit", "Service", "Type", "Comment"], a.comments.slice(0, 60).map((c) => [fbDay(c.response.visit), c.service, c.kind, `${c.text}${c.low ? " (low rating)" : ""}`]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 32 } });
+  }
+  r.save(`THSC Patient Feedback ${a.period ? `${a.period.from} to ${a.period.to}` : fileRange(new Date(), new Date())}.pdf`);
 }

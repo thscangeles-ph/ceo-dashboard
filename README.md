@@ -19,6 +19,7 @@ The one-screen summary dashboard for The Heart Specialists Clinic & Diagnostic. 
 - **Patient Acquisition Cost Report:** the cards (with cost per new patient), patients by type, new patients by source and cost by source with the spend entered
 - **CRM Report:** the cards, inquiry outcomes, findings and the eight CRM areas, including the follow-up queue (not in Marketing accounts' reports)
 - **Inquiry Tracker report:** the inquiries in the current view (use From / To for a period), with each one's next step
+- **Patient Feedback Report:** the cards, interpretation & analysis, the trend by month of visit, results by service, every question's answer counts per service, who answered, the responses that need follow-up and the comments (marked confidential)
 - **Podcast Report (YouTube):** subscribers and views, episodes vs clips, top videos, latest uploads, and the schedule (what is not yet published, and how the published ones are doing)
 
 Reports that list patients are marked confidential in the footer of every page. The PDF is made in the browser; nothing is sent to a server.
@@ -31,6 +32,17 @@ Reports that list patients are marked confidential in the footer of every page. 
 - Unique patients, transactions and revenue for the chosen type, and **acquisition cost per new patient** (spend ÷ NEW and HMO/NEW patients in the range)
 - **Patients by type** table (click a row to switch the cards), new patients by acquisition source (each new patient counted once, under the first source they gave), and **cost by source** with a spend box per source
 - Spend is saved per date range: pick the month first, then enter that month's spend. With accounts it is shared with the team; Admin, ManCom and Doctors can change it, Marketing can view it, Concierge doesn't see this tab.
+
+**Patient Feedback tab**, live from the feedback form's Google Sheet (the **RAW DATA** tab):
+
+- **The period is the date of visit** (the day the patient answered the paper survey), never the day the answers were typed into the form. Choose a month, the last 30 or 90 days, this year, or any dates; a month is compared with the month before it.
+- **Cards:** responses, **Satisfied** (Very Satisfied + Satisfied, out of the answers that weren't N/A), Very Satisfied with the average out of 5, **Would recommend** (yes / maybe / no), and how many responses need follow-up.
+- **Interpretation & analysis**, worked out with every new response: overall results, the change from the previous period, the lowest-rated questions, the best and lowest-rated services, follow-ups and comments.
+- **By service** (the service each patient availed; click one to see only its responses) and **Ratings by question**: for each service, how many chose Very Satisfied, Satisfied, Neutral, Dissatisfied, Very Dissatisfied or N/A for every question, like the CHARTS & TABLE tab.
+- **Who answered:** gender, age, how they learned about THSC and how they reached THSC (patients who chose several ways count under each).
+- **Needs follow-up:** every response with a Dissatisfied rating or worse, with what the patient wrote and its row number in the sheet. **Comments & experiences:** everything patients wrote (N/A left out), searchable.
+- The sheet's questions aren't hard-coded: new questions, services or answer choices added to the form are picked up automatically. Columns with names, contact numbers or email addresses would be recognised and never shown.
+- New responses appear within about two minutes while the tab is open (or click **Refresh**). Admin, ManCom, Doctors and Marketing can open it; Concierge can't. It needs accounts, and the sheet is read on the server with a Google service account (see **Deploy to Vercel**), so it stays private.
 
 **Podcast Tracker & Scheduler** (formerly the separate THSC Podcast Tracker; YouTube only), in its own **Podcast** section of the sidebar:
 
@@ -59,11 +71,11 @@ With Supabase connected, everyone signs in and the whole team shares one set of 
 
 | Account | Sees and does |
 | --- | --- |
-| **Admin** | Everything: Sales Dashboard, Patient Acquisition Cost, CRM Dashboard, Inquiry Tracker, Podcast Tracker & Scheduler, and **Team** to create accounts and change access |
+| **Admin** | Everything: Sales Dashboard, Patient Acquisition Cost, CRM Dashboard, Inquiry Tracker, Patient Feedback, Podcast Tracker & Scheduler, and **Team** to create accounts and change access |
 | **ManCom** | Everything, same as Admin |
 | **Doctors** | Everything, same as Admin |
 | **Concierge** | Inquiry Tracker (add and update inquiries, export the Excel file) and CRM Dashboard, with patient names and numbers |
-| **Marketing** | Their own Sales Dashboard, and the Podcast Tracker & Scheduler (can change the schedule). Read-only Patient Acquisition Cost and CRM Dashboard (no Inquiry Tracker), where patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed |
+| **Marketing** | Their own Sales Dashboard, Patient Feedback, and the Podcast Tracker & Scheduler (can change the schedule). Read-only Patient Acquisition Cost and CRM Dashboard (no Inquiry Tracker), where patient names become codes (e.g. "Patient 091CEC") and contact numbers are removed |
 
 The database enforces this (Row Level Security and de-identified views), not only the screens. In the database the roles are stored as `admin`, `mancom`, `doctor`, `concierge` and `marketing`; accounts created as "CEO / Doctor" before these roles existed are `admin` and show as **Admin**.
 
@@ -189,5 +201,14 @@ Open `http://localhost:3000`. The service worker only registers in production bu
 2. Vercel detects **Next.js** automatically. Keep the default build command (`next build`) and deploy.
 
 No environment variables are required for device-only use. For accounts, add the two Supabase variables from `.env.example` (see **Accounts and shared data**).
+
+**Patient Feedback (the feedback Google Sheet):** the sheet stays private and is shared, view-only, with a Google service account (a robot account) that only this app's server uses.
+
+1. **Google Cloud** (the same project as the YouTube key): APIs & Services → Library → **Google Sheets API** → Enable.
+2. IAM & Admin → **Service Accounts** → Create service account (any name, no roles) → open it → **Keys** → Add key → Create new key → **JSON**. A .json file downloads: treat it like a password.
+3. Copy the service account's email (…@….iam.gserviceaccount.com). In the feedback Google Sheet click **Share**, add that email as **Viewer**, untick Notify people, Share.
+4. **Vercel → this project → Settings → Environment Variables:** `GOOGLE_SERVICE_ACCOUNT_JSON` = the whole contents of the .json file (open it in Notepad or TextEdit, copy all), for Production and Preview, then redeploy. Delete the downloaded file afterwards.
+
+The app reads the tab named RAW DATA (or the first tab) of the clinic's feedback sheet. Optional: `FEEDBACK_SHEET_ID` (the long code in another sheet's link) and `FEEDBACK_SHEET_TAB` (another tab's name). If the tab says the robot account can't open the sheet, step 3 is missing; if it says the Sheets API is switched off, step 1 is.
 
 **Podcast Tracker (YouTube figures):** add `YOUTUBE_API_KEY` in Vercel → this project → Settings → Environment Variables (Production and Preview), then redeploy. It is a Google Cloud API key with the **YouTube Data API v3** enabled; if the old THSC Podcast Tracker project on Vercel already has one, copy that value. It is read on the server only: never add a `NEXT_PUBLIC_` prefix. Optional: `YOUTUBE_CHANNEL_ID` or `YOUTUBE_HANDLE` to track another channel (the default is The Heart Speaks), and `YOUTUBE_MAX_VIDEOS` (default 500).

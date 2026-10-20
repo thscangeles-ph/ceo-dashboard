@@ -48,11 +48,11 @@ export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", mancom: "ManCo
 export const FULL_ACCESS: Role[] = ["admin", "mancom", "doctor"];
 export const isFullAccess = (role: Role | null | undefined) => Boolean(role && FULL_ACCESS.includes(role));
 export const ROLE_DETAIL: Record<Role, string> = {
-  admin: "Everything: own Sales Dashboard, Patient Acquisition Cost, CRM, Inquiry Tracker, Podcast Tracker & Scheduler and Team",
+  admin: "Everything: own Sales Dashboard, Patient Acquisition Cost, CRM, Inquiry Tracker, Patient Feedback, Podcast Tracker & Scheduler and Team",
   mancom: "Everything, same as Admin",
   doctor: "Everything, same as Admin",
   concierge: "Inquiry Tracker (add and update inquiries) and CRM Dashboard, with names and numbers",
-  marketing: "Own Sales Dashboard and the Podcast Tracker & Scheduler; read-only Patient Acquisition Cost and CRM, patient details hidden",
+  marketing: "Own Sales Dashboard, Patient Feedback and the Podcast Tracker & Scheduler; read-only Patient Acquisition Cost and CRM, patient details hidden",
 };
 export type Profile = { id: string; email: string; full_name: string; role: Role | null };
 // Earlier versions called concierge accounts "staff".
