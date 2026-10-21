@@ -7,7 +7,7 @@ import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
 import type { CommentType } from "@/lib/feedback";
-import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
+import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, basisText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
 const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
@@ -132,6 +132,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
   // Needs improvement: uses each comment's type as shown on the board (the team's choice, else the guess).
   const improvements = useMemo(() => (survey && a ? suggestImprovements(survey, a, (c) => tags[commentKey(source, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience")) : []), [survey, a, tags, source]);
   const improvementCount = improvements.reduce((n, d) => n + d.items.length, 0);
+  const improvementRows = improvements.filter((d) => !dept || d.department === dept).flatMap((d) => d.items).sort((x, y) => y.score - x.score);
 
   const changeType = async (key: string, type: CommentType) => {
     if (!saveTag) return;
@@ -335,7 +336,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
 
           <section>
             <div className="section-head-row">
-              <div><h2>Needs improvement</h2><p className="section-note">Suggested improvements written from this period&apos;s ratings (Neutral or Dissatisfied answers) and comments (Negative, Suggestion and Experience), grouped by the department to tap, most urgent first. Open &ldquo;Based on&rdquo; to see the ratings and comments behind each one.</p></div>
+              <div><h2>Needs improvement</h2><p className="section-note">Short suggestions from this period&apos;s ratings (Neutral or Dissatisfied answers) and comments (Negative, Suggestion, Experience), most urgent first. Hover over a basis to see the ratings and comments behind it.</p></div>
               <div className="filterbar no-print fb-comment-filters">
                 <label>Department to tap
                   <select value={dept} onChange={(e) => setDept(e.target.value)}>
@@ -345,25 +346,24 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
                 </label>
               </div>
             </div>
-            {improvements.length ? improvements.filter((d) => !dept || d.department === dept).map((d, i) => (
-              <details key={`${dept}|${d.department}`} className="panel fb-imp" open={Boolean(dept) || i === 0}>
-                <summary>
-                  <span className="fb-imp-name">{d.department}</span>
-                  <span className="fb-imp-count">{d.items.length} improvement{d.items.length === 1 ? "" : "s"}</span>
-                </summary>
-                <ul className="fb-imp-list">
-                  {d.items.map((it) => (
-                    <li key={it.theme}>
-                      <p>{it.text}</p>
-                      <details className="fb-imp-why">
-                        <summary>Based on {it.evidence.length} rating{it.evidence.length === 1 ? "" : "s"} or comment{it.evidence.length === 1 ? "" : "s"}</summary>
-                        <ul>{it.evidence.map((e) => <li key={e}>{e}</li>)}</ul>
-                      </details>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )) : <div className="panel"><p className="empty-note">Nothing stands out in this period: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
+            {improvementRows.length ? (
+              <div className="panel trk-panel">
+                <div className="table-scroll">
+                  <table className="fb-imp-table">
+                    <thead><tr><th>Improvement sentence</th><th>Basis</th><th>Department to tap</th></tr></thead>
+                    <tbody>
+                      {improvementRows.map((it) => (
+                        <tr key={`${it.department}|${it.theme}`}>
+                          <td className="name fb-imp-text">{it.short}</td>
+                          <td className="name fb-imp-basis" title={it.evidence.join("\n")}>{basisText(it)}</td>
+                          <td className="name fb-imp-dept">{it.department}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : <div className="panel"><p className="empty-note">Nothing stands out in this period: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
           </section>
 
           <section>

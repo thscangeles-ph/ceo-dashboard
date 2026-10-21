@@ -7,7 +7,7 @@ import { effectiveResponded } from "./lead";
 import type { InquiryRow } from "./parse";
 import { createReport, fileRange } from "./pdf";
 import type { CommentType, DepartmentImprovements, FeedbackSummary, Survey } from "./feedback";
-import { analyzeFeedback, COMMENT_TYPES, dayText as fbDay, monthNote, monthText, pctText } from "./feedback";
+import { analyzeFeedback, basisText, COMMENT_TYPES, dayText as fbDay, monthNote, monthText, pctText } from "./feedback";
 import type { Channel, PodcastPlan, Snapshot, Video } from "./podcast";
 import { engagementRate, episodeName, formatOf, FORMATS, localDay, PLAN_FORMATS, PLAN_STATUSES, planAlert, sumKnown, videoIdOf } from "./podcast";
 import type { NextStep } from "./tracker";
@@ -236,11 +236,8 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     profile.forEach((p) => r.table([p.column.text, "Responses", "Share"], p.items.map((i) => [i.name, count(i.value), pctText(i.value / p.answered)]), { right: [1, 2], widths: { 0: 120 } }));
   }
   if (o.improvements.length) {
-    r.heading("Needs improvement", "Suggested improvements from the ratings and comments in this period, by the department to tap, most urgent first.");
-    o.improvements.forEach((d) => {
-      r.note(d.department.toUpperCase());
-      r.table(["Suggested improvement", "Based on"], d.items.map((it) => [it.text, it.evidence.slice(0, 4).map((e) => `- ${e}`).join("\n") + (it.evidence.length > 4 ? `\n(+${it.evidence.length - 4} more)` : "")]), { fontSize: 7.5, widths: { 0: 110 } });
-    });
+    r.heading("Needs improvement", "Short suggestions from the ratings and comments in this period, most urgent first.");
+    r.table(["Improvement sentence", "Basis", "Department to tap"], o.improvements.flatMap((d) => d.items).sort((x, y) => y.score - x.score).map((it) => [it.short, basisText(it), it.department]), { fontSize: 7.5, widths: { 0: 95, 2: 60 } });
   }
   if (o.comments.length) {
     const label = (t: CommentType) => COMMENT_TYPES.find((c) => c.id === t)!.label;
