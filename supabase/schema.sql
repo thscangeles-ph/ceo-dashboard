@@ -28,19 +28,36 @@ alter table public.profiles drop constraint if exists profiles_role_check;
 update public.profiles set role = 'concierge' where role = 'staff';
 alter table public.profiles add constraint profiles_role_check check (role in ('admin', 'mancom', 'doctor', 'concierge', 'marketing'));
 
--- The signed-in user's role. SECURITY DEFINER so policies can call it without recursing into RLS.
-create or replace function public.app_role()
-returns text language sql stable security definer set search_path = public
-as $$ select role from public.profiles where id = auth.uid() $$;
-revoke all on function public.app_role() from public;
-grant execute on function public.app_role() to authenticated;
+-- The signed-in user's role, and whether it has full access (Admin, ManCom, Doctors). Every access rule
+-- below uses them. They read profiles, whose own rule uses them too, so they must skip Row Level
+-- Security (SECURITY DEFINER); otherwise the rules call each other forever and every request fails
+-- with "stack depth limit exceeded". They live in a private schema the API doesn't expose, so
+-- Supabase's Security Advisor has nothing to flag: don't switch them to SECURITY INVOKER.
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated;
 
--- Admin, ManCom and Doctors all have full access.
+create or replace function private.app_role()
+returns text language sql stable security definer set search_path = ''
+as $$ select role from public.profiles where id = auth.uid() $$;
+
+create or replace function private.full_access()
+returns boolean language sql stable security definer set search_path = ''
+as $$ select coalesce(private.app_role() in ('admin', 'mancom', 'doctor'), false) $$;
+
+revoke all on function private.app_role(), private.full_access() from public;
+grant execute on function private.app_role(), private.full_access() to authenticated;
+
+-- The names the access rules use: plain wrappers (SECURITY INVOKER) around the private functions.
+-- Replacing them also repairs a project where the earlier versions were switched to SECURITY INVOKER.
+create or replace function public.app_role()
+returns text language sql stable security invoker set search_path = ''
+as $$ select private.app_role() $$;
 create or replace function public.full_access()
-returns boolean language sql stable security definer set search_path = public
-as $$ select coalesce(public.app_role() in ('admin', 'mancom', 'doctor'), false) $$;
-revoke all on function public.full_access() from public;
-grant execute on function public.full_access() to authenticated;
+returns boolean language sql stable security invoker set search_path = ''
+as $$ select private.full_access() $$;
+revoke all on function public.app_role(), public.full_access() from public;
+grant execute on function public.app_role(), public.full_access() to authenticated;
 
 drop policy if exists "profiles: read own, admins read all" on public.profiles;
 create policy "profiles: read own, admins read all" on public.profiles
@@ -61,6 +78,8 @@ begin
   return new;
 end;
 $$;
+-- Only the trigger runs it; nobody calls it through the API.
+revoke all on function public.handle_new_user() from public, anon, authenticated;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();

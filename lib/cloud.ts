@@ -264,6 +264,8 @@ export function friendly(message: string) {
   // Supabase's built-in email sender only sends a few emails an hour, and only to the project team's addresses.
   if (/error sending .*email|email rate limit|over_email_send_rate_limit|email address not authorized/i.test(message)) return "The email couldn't be sent: the clinic's email sender is limited (a few emails an hour, only to approved addresses). Use Team → Set password instead.";
   if (/email not confirmed/i.test(message)) return "This email is not confirmed yet. Ask an Admin, ManCom or Doctors account to set a password for you in Team.";
+  // The access rules' helper functions were switched to SECURITY INVOKER (e.g. by a Security Advisor fix), so they loop.
+  if (/stack depth limit exceeded/i.test(message)) return "Database setup problem: the access rules are calling each other in a loop (stack depth limit exceeded). In Supabase → SQL Editor, run supabase/schema.sql again; it repairs this. Don't apply Security Advisor's \"security invoker\" change to app_role or full_access.";
   if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask an Admin, ManCom or Doctors account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";
   if (/failed to fetch|network/i.test(message)) return "Can't reach the server. Check the internet connection and try again.";
