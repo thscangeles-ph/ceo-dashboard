@@ -126,6 +126,13 @@ export function buildSurvey(headers: string[], allRows: string[][], firstRow = 2
   const numbered = allRows.map((cells, i) => ({ cells, row: firstRow + i, where: where?.[i] })).filter((r) => r.cells.some((c) => c.trim()));
   const rows = numbered.map((r) => r.cells);
   const columns = classify(headers, rows);
+  // A question nobody has answered yet (e.g. just added to the form) still belongs to the block it sits in:
+  // between rating questions it is a rating question too, so it is always listed and charted.
+  columns.forEach((c, i) => {
+    if (c.kind !== "empty" || COMMENT.test(c.header) || /recommend/i.test(c.header)) return;
+    const prev = columns.slice(0, i).reverse().find((x) => x.kind !== "empty"), next = columns.slice(i + 1).find((x) => x.kind !== "empty");
+    if (prev?.kind === "rating" || (next?.kind === "rating" && /^\s*\[?\s*\d+\./.test(c.header))) Object.assign(c, { kind: "rating", min: 1, max: 5, labels: prev?.labels ?? next?.labels ?? scaleLabels(WORD_SCALES[0], []) });
+  });
   // Without a column named like a visit date, use another date column, then the form's timestamp.
   let visit = columns.find((c) => c.kind === "visit") ?? null;
   if (!visit) { visit = columns.find((c) => c.kind === "date" && /date|petsa/i.test(c.header)) ?? columns.find((c) => c.kind === "date") ?? null; if (visit) visit.kind = "visit"; }
