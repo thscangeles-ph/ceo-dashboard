@@ -7,7 +7,7 @@ import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
 import type { CommentType } from "@/lib/feedback";
-import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthText, pctText, shortNote } from "@/lib/feedback";
+import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
 const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
@@ -43,6 +43,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
   const [tagNote, setTagNote] = useState("");
   const [savingKey, setSavingKey] = useState("");
   const [hidden, setHidden] = useState<Set<CommentType>>(new Set());
+  const [dept, setDept] = useState("");
 
   const refresh = useCallback(async (fresh: boolean) => {
     setLoading(true);
@@ -128,6 +129,10 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
     const columns = keys.map((mk) => ({ month: mk, items: shown.filter((c) => (c.response.visit?.slice(0, 7) || "undated") === mk).sort((x, y) => order[x.type] - order[y.type] || (x.response.visit ?? "").localeCompare(y.response.visit ?? "")) }));
     return { columns, counts };
   }, [a, tags, query, hidden, source]);
+  // Needs improvement: uses each comment's type as shown on the board (the team's choice, else the guess).
+  const improvements = useMemo(() => (survey && a ? suggestImprovements(survey, a, (c) => tags[commentKey(source, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience")) : []), [survey, a, tags, source]);
+  const improvementCount = improvements.reduce((n, d) => n + d.items.length, 0);
+
   const changeType = async (key: string, type: CommentType) => {
     if (!saveTag) return;
     setSavingKey(key); setTagNote("");
@@ -145,7 +150,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
           <h1>Patient Feedback: {name}</h1>
           <p className="sub">{intro}</p>
           <div className="crm-actions no-print">
-            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, service: filters.service, comments: board.columns.flatMap((col) => col.items).map((c) => ({ visit: c.response.visit, type: c.type, service: c.service, text: c.text })), filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
+            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, improvements, service: filters.service, comments: board.columns.flatMap((col) => col.items).map((c) => ({ visit: c.response.visit, type: c.type, service: c.service, text: c.text })), filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
             <button type="button" className="btn btn-outline" onClick={() => { void refresh(true); void refreshTags(); }} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </div>
@@ -202,7 +207,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
             <div className="kpi accent"><div className="label">Satisfied</div><div className="value">{pctText(t.csat, 1)}</div><div className="note">{delta !== null ? `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} pts vs previous period` : "Very Satisfied or Satisfied ratings"}</div></div>
             <div className="kpi"><div className="label">Very satisfied</div><div className="value">{pctText(t.verySatisfied, 1)}</div><div className="note">Average {t.average === null ? "—" : t.average.toFixed(2)} of 5</div></div>
             <div className="kpi"><div className="label">Would recommend</div><div className="value">{pctText(t.recommend, 1)}</div><div className="note">{t.recAnswers ? `${t.rec.Yes} yes · ${t.rec.Maybe} maybe · ${t.rec.No} no` : "No answers yet"}</div></div>
-            <div className="kpi"><div className="label">Needs follow-up</div><div className="value">{num(a.unhappy.length)}</div><div className="note">Responses with a Dissatisfied rating · {num(a.comments.length)} comments</div></div>
+            <div className="kpi"><div className="label">Needs improvement</div><div className="value">{num(improvementCount)}</div><div className="note">{improvementCount ? `Suggestions for ${improvements.length} department${improvements.length === 1 ? "" : "s"}, ${improvements[0].department} first` : "Nothing stands out"}</div></div>
           </div>
 
           {findings.length > 0 && (
@@ -329,26 +334,36 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
           )}
 
           <section>
-            <h2>Needs follow-up</h2>
-            <p className="section-note">Responses with a Dissatisfied (or worse) rating, newest visit first. The row number is the response&apos;s row in the sheet.</p>
-            <div className="panel trk-panel">
-              <div className="trk-scroll">
-                <table className="fb-follow">
-                  <thead><tr><th>Date of visit</th><th>Service</th><th>Low ratings</th><th>What they said</th><th className="num">Sheet row</th></tr></thead>
-                  <tbody>
-                    {a.unhappy.length ? a.unhappy.map((u) => (
-                      <tr key={u.response.row}>
-                        <td>{dayText(u.response.visit)}</td>
-                        <td className="name">{u.service || "—"}</td>
-                        <td className="name">{u.low.map((l) => <div key={l.question}><span className="fb-tag">{l.answer}</span> {l.question}</div>)}</td>
-                        <td className="name fb-said">{u.comments.length ? u.comments.join(" · ") : <span className="muted">No comment</span>}</td>
-                        <td className="num">{u.response.where ?? u.response.row}</td>
-                      </tr>
-                    )) : <tr><td colSpan={5} className="empty-note">No Dissatisfied ratings in this period.</td></tr>}
-                  </tbody>
-                </table>
+            <div className="section-head-row">
+              <div><h2>Needs improvement</h2><p className="section-note">Suggested improvements written from this period&apos;s ratings (Neutral or Dissatisfied answers) and comments (Negative, Suggestion and Experience), grouped by the department to tap, most urgent first. Open &ldquo;Based on&rdquo; to see the ratings and comments behind each one.</p></div>
+              <div className="filterbar no-print fb-comment-filters">
+                <label>Department to tap
+                  <select value={dept} onChange={(e) => setDept(e.target.value)}>
+                    <option value="">All departments ({improvements.length})</option>
+                    {improvements.map((d) => <option key={d.department} value={d.department}>{d.department} · {d.items.length}</option>)}
+                  </select>
+                </label>
               </div>
             </div>
+            {improvements.length ? improvements.filter((d) => !dept || d.department === dept).map((d, i) => (
+              <details key={`${dept}|${d.department}`} className="panel fb-imp" open={Boolean(dept) || i === 0}>
+                <summary>
+                  <span className="fb-imp-name">{d.department}</span>
+                  <span className="fb-imp-count">{d.items.length} improvement{d.items.length === 1 ? "" : "s"}</span>
+                </summary>
+                <ul className="fb-imp-list">
+                  {d.items.map((it) => (
+                    <li key={it.theme}>
+                      <p>{it.text}</p>
+                      <details className="fb-imp-why">
+                        <summary>Based on {it.evidence.length} rating{it.evidence.length === 1 ? "" : "s"} or comment{it.evidence.length === 1 ? "" : "s"}</summary>
+                        <ul>{it.evidence.map((e) => <li key={e}>{e}</li>)}</ul>
+                      </details>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )) : <div className="panel"><p className="empty-note">Nothing stands out in this period: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
           </section>
 
           <section>

@@ -320,7 +320,7 @@ export function feedbackFindings(a: FeedbackSummary) {
     const best = services.reduce((x, y) => ((y.csat ?? 0) > (x.csat ?? 0) ? y : x)), worst = services.reduce((x, y) => ((y.csat ?? 1) < (x.csat ?? 1) ? y : x));
     if (best !== worst) out.push({ label: "Services", tone: "info", text: `Best rated: ${best.section.name} (${pctText(best.csat)} satisfied). Lowest: ${worst.section.name} (${pctText(worst.csat)}).` });
   }
-  if (a.unhappy.length) out.push({ label: "Follow up", tone: "watch", text: `${a.unhappy.length} response${a.unhappy.length === 1 ? " has" : "s have"} a Dissatisfied rating or worse; see "Needs follow-up" below.` });
+  if (a.unhappy.length) out.push({ label: "To improve", tone: "watch", text: `${a.unhappy.length} response${a.unhappy.length === 1 ? " has" : "s have"} a Dissatisfied rating or worse; see "Needs improvement" below for what each department can do.` });
   if (a.comments.length) out.push({ label: "Comments", tone: "info", text: `${a.comments.length} comment${a.comments.length === 1 ? "" : "s"} or experience${a.comments.length === 1 ? "" : "s"} shared${a.comments.some((c) => c.low) ? `, ${a.comments.filter((c) => c.low).length} from patients who gave a low rating` : ""}.` });
   return out;
 }
@@ -459,3 +459,78 @@ export function combineTabs(tabs: SheetTab[]) {
   }));
   return { headers, rows, where };
 }
+
+// ---------------------------------------------------------------------------------------------
+// "Needs improvement": suggested improvements from the ratings and comments, by the department to tap.
+
+type Theme = { id: string; question?: RegExp; comment?: RegExp; owner: "own" | "front" | "admin"; text: string };
+// Each theme: what to look for in a question or a comment, who owns it (the service itself, the front desk /
+// concierge, or general admin for facilities), and the suggestion. Checked in order; the first match wins.
+const THEMES: Theme[] = [
+  { id: "calls", question: /response time|calls? or messages/i, comment: /\bcall|tawag|\btext|message|\bsms\b|viber|sumagot|sagot|pick ?up|\bdials?\b|response|reply/i, owner: "front",
+    text: "Answer calls and messages faster: set a reply target (for example within 15 minutes during clinic hours), assign who covers the phone, Viber and SMS at peak times and on weekends, and call back missed calls the same day." },
+  { id: "greeting", question: /greet|welcome/i, comment: /greet|welcome|bati/i, owner: "front",
+    text: "Greet every patient as they come in: one person at the entrance at all times, with a quick hello and directions." },
+  { id: "queue", question: /queue|waiting time|reasonable wait/i, comment: /queu|pila|waiting|matagal|numbers?\b|numbering|turn\b|magulo/i, owner: "front",
+    text: "Manage the queue visibly: give numbers at the entrance, show or announce the number being served, keep scheduled patients in order, and text patients when their turn is near so they can wait outside." },
+  { id: "scheduling", question: /getting a schedule|timeliness of getting/i, comment: /schedul|resched|slot|appointment|cancel/i, owner: "front",
+    text: "Make booking and rescheduling easier: offer the next open slots right away, avoid repeated reschedules (and cancelling confirmed ones), and confirm the final date by text." },
+  { id: "information", comment: /inform|wrong|\bmali\b|cut ?-?off|next steps|details|lack of info/i, owner: "front",
+    text: "Give complete, correct information: check doctors' clinic schedules and lab cut-off times before telling patients, and text the next steps after each visit." },
+  { id: "results", question: /results?\b/i, comment: /results?\b|resulta/i, owner: "own",
+    text: "Tell every patient when and how they will get their results, release them on the promised date, and text the patient if there is a delay." },
+  { id: "instructions", question: /instruction|explained/i, comment: /instruction|explain|paliwanag/i, owner: "own",
+    text: "Explain preparation and procedure instructions clearly, and give them in writing or by text before the visit." },
+  { id: "process", question: /process|orderly|endorse|handled/i, owner: "own",
+    text: "Make the patient's path clear from inquiry to endorsement: one person guides them and confirms the next step before they leave." },
+  { id: "courtesy", question: /courteous|approachable|helpful/i, comment: /masungit|nakasimangot|rude|bastos|attentive|madaldal|cellphone|nagce?llphone|kwentuhan|courte|unfriendly/i, owner: "own",
+    text: "Keep a friendly, attentive manner with every patient: a short courtesy refresher, and no phone use or side conversations while patients wait." },
+  { id: "facilities", question: /clean|restroom|seating|hallway|temperature|stocked|environment|safe|area/i, comment: /parking|restroom|\bcr\b|toilet|seat|chair|aircon|air con|temperature|init|dirty|marumi|clean/i, owner: "admin",
+    text: "Check common areas, restrooms and supplies (tissue, soap) several times a day, keep the waiting area cool and comfortable, and look into more parking." },
+  { id: "comfort", question: /privacy|comfortable|coverage|respect/i, owner: "own",
+    text: "Protect privacy and comfort during procedures: enough coverage, closed curtains, and explaining each step as it happens." },
+  { id: "care", question: /assist(ed)? (you )?properly|positioning|vital signs|blood extraction|carefully|guide you/i, owner: "own",
+    text: "Refresh staff on careful, gentle assistance during the procedure, and check on the patient's comfort throughout." },
+];
+const OTHER: Theme = { id: "other", owner: "own", text: "Review these ratings and comments with the team and agree on one change to try next month." };
+
+export type Improvement = { department: string; theme: string; text: string; evidence: string[]; score: number };
+/**
+ * Suggested improvements for the period: every question with Neutral or Dissatisfied ratings (or below 90%
+ * satisfied) and every Negative, Suggestion or Experience comment, matched to a theme and grouped under the
+ * department to tap, most urgent first. Calls, greeting, queue, scheduling and information go to the front
+ * desk (the concierge service) and facilities to general admin when those services exist.
+ */
+export function suggestImprovements(survey: Survey, a: FeedbackSummary, typeOf: (c: FeedbackSummary["comments"][number]) => CommentType) {
+  const front = survey.sections.find((s) => /concierge|reception|inquiry|front/i.test(s.name))?.name;
+  const admin = survey.sections.find((s) => /admin|environment|facilit/i.test(s.name))?.name;
+  // A rating about a service's own area (e.g. "Was the laboratory area clean") stays with that service.
+  const owner = (t: Theme, service: string, rating: boolean) => (t.owner === "front" && front) || (t.owner === "admin" && !rating && admin) || service;
+  const items = new Map<string, Improvement>();
+  const add = (t: Theme, service: string, evidence: string, score: number, rating = false) => {
+    const department = owner(t, service, rating), id = `${department}|${t.id}`;
+    const item = items.get(id) ?? { department, theme: t.id, text: t.text, evidence: [], score: 0 };
+    if (!item.evidence.includes(evidence)) item.evidence.push(evidence);
+    item.score += score; items.set(id, item);
+  };
+  a.services.forEach((s) => s.questions.forEach((q) => {
+    const neutral = q.counts[3] || 0, low = (q.counts[2] || 0) + (q.counts[1] || 0);
+    if (!q.answers || (!low && neutral < 2 && (q.csat ?? 1) >= 0.9)) return;
+    const theme = THEMES.find((t) => t.question?.test(q.column.text));
+    // "Overall experience" questions sum up the others, so they don't make a suggestion of their own.
+    if (!theme && /overall/i.test(q.column.text)) return;
+    add(theme ?? OTHER, s.section.name, `${s.section.name}: "${q.column.text.replace(/^\d+\.\s*/, "")}" ${pctText(q.csat)} satisfied${low ? `, ${low} Dissatisfied` : ""}${neutral ? `, ${neutral} Neutral` : ""}`, low * 3 + neutral, true);
+  }));
+  a.comments.forEach((c) => {
+    const type = typeOf(c);
+    if (type === "positive") return;
+    const theme = THEMES.find((t) => t.comment?.test(c.text)) ?? OTHER;
+    const quote = c.text.replace(/\s+/g, " ");
+    add(theme, c.service, `${c.service}, ${dayText(c.response.visit, { month: "short", day: "numeric" })}: "${quote.length > 110 ? `${quote.slice(0, 109)}…` : quote}"`, type === "negative" ? 3 : 2);
+  });
+  const departments = new Map<string, Improvement[]>();
+  Array.from(items.values()).forEach((i) => departments.set(i.department, [...(departments.get(i.department) || []), i]));
+  return Array.from(departments, ([department, list]) => ({ department, items: list.sort((x, y) => y.score - x.score), score: list.reduce((n, i) => n + i.score, 0) }))
+    .sort((x, y) => y.score - x.score);
+}
+export type DepartmentImprovements = ReturnType<typeof suggestImprovements>;

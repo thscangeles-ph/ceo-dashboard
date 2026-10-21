@@ -652,16 +652,9 @@ table.pod-videos, table.pod-plans { min-width: 860px; }
 .fb-findings { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .finding.info { border-left: 4px solid var(--line); }
 .finding.info .label svg { color: var(--ink-soft); }
-td.fb-bad { color: #9b2c1f; font-weight: 700; }
 .fb-profile { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
 @media (max-width: 600px) { .fb-profile { grid-template-columns: 1fr; } }
 .fb-profile > .panel + .panel { margin-top: 0; }
-table.fb-follow { min-width: 820px; }
-.fb-follow td { vertical-align: top; }
-.fb-follow td.name { white-space: normal; font-size: .84rem; }
-.fb-follow td.name div + div { margin-top: 4px; }
-.fb-said { min-width: 240px; max-width: 420px; }
-.fb-tag { display: inline-block; font-family: var(--font-sans-stack); font-size: .7rem; font-weight: 700; padding: 1px 6px; margin-left: 6px; background: #f6dcd5; color: #7f1d1d; border-radius: 3px; vertical-align: 1px; }
 .fb-comment-filters { margin: 0; align-items: flex-end; }
 .fb-comment-filters .remember { margin: 0 0 10px; text-transform: none; letter-spacing: 0; font-size: .82rem; }
 @media (max-width: 600px) { .fb-comment-filters .trk-search input { min-width: 0; width: 100%; } }
@@ -690,7 +683,6 @@ table.fb-follow { min-width: 820px; }
 .fb-card-meta select { font: inherit; font-size: .7rem; border: 1px solid rgba(27, 25, 21, .25); background: rgba(255, 255, 255, .55); padding: 1px 2px; border-radius: 3px; }
 @media (max-width: 600px) { .fb-board { grid-auto-flow: row; grid-auto-columns: auto; } }
 @media print { .fb-board { grid-auto-flow: row; } .fb-card-meta select { display: none; } }
-.fb-follow .fb-tag { margin-left: 0; }
 
 /* Patient Feedback: months side by side (questions | month chart | month chart …), like the CHARTS & TABLE tab */
 .fb-compare-pick { align-items: flex-end; margin-bottom: 12px; }
@@ -713,3 +705,21 @@ table.fb-follow { min-width: 820px; }
 .fb-interp strong { display: block; font-size: .72rem; letter-spacing: .04em; margin-bottom: 4px; }
 .fb-interp p { margin: 0; }
 .fb-cmp .recharts-wrapper:focus, .fb-cmp .recharts-surface:focus, .fb-cmp svg:focus { outline: none; }
+
+/* Patient Feedback: needs improvement, by department */
+.fb-imp { padding: 0; }
+.fb-imp + .fb-imp { margin-top: 10px; }
+.fb-imp > summary { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px; cursor: pointer; list-style: none; }
+.fb-imp > summary::-webkit-details-marker { display: none; }
+.fb-imp > summary::before { content: "▸"; color: var(--ink-soft); }
+.fb-imp[open] > summary::before { content: "▾"; }
+.fb-imp-name { font-weight: 800; font-size: .95rem; flex: 1; }
+.fb-imp-count { font-family: var(--font-mono-stack); font-size: .76rem; color: #7f1d1d; background: #fbe3dd; padding: 2px 8px; border-radius: 999px; }
+.fb-imp-list { margin: 0; padding: 0 18px 14px 40px; display: grid; gap: 10px; }
+.fb-imp-list > li { line-height: 1.5; }
+.fb-imp-list > li::marker { color: var(--gold); }
+.fb-imp-list p { margin: 0; font-size: .9rem; }
+.fb-imp-why { margin-top: 3px; }
+.fb-imp-why summary { cursor: pointer; font-size: .76rem; color: var(--gold); font-weight: 600; }
+.fb-imp-why ul { margin: 4px 0 0; padding-left: 18px; font-size: .78rem; color: var(--ink-soft); display: grid; gap: 3px; }
+@media print { .fb-imp-why ul { display: block; } }

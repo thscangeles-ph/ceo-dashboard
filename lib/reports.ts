@@ -6,7 +6,7 @@ import { DUE_LABEL } from "./crm";
 import { effectiveResponded } from "./lead";
 import type { InquiryRow } from "./parse";
 import { createReport, fileRange } from "./pdf";
-import type { CommentType, FeedbackSummary, Survey } from "./feedback";
+import type { CommentType, DepartmentImprovements, FeedbackSummary, Survey } from "./feedback";
 import { analyzeFeedback, COMMENT_TYPES, dayText as fbDay, monthNote, monthText, pctText } from "./feedback";
 import type { Channel, PodcastPlan, Snapshot, Video } from "./podcast";
 import { engagementRate, episodeName, formatOf, FORMATS, localDay, PLAN_FORMATS, PLAN_STATUSES, planAlert, sumKnown, videoIdOf } from "./podcast";
@@ -194,7 +194,7 @@ export async function podcastReport(o: { channel: Channel | null; videos: Video[
 }
 
 /** Patient Feedback: the survey results for the period and service chosen on the tab. */
-export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { name: string; findings: { label: string; text: string }[]; filters: string; service: string; comments: { visit: string | null; type: CommentType; service: string; text: string }[] }) {
+export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { name: string; findings: { label: string; text: string }[]; improvements: DepartmentImprovements; filters: string; service: string; comments: { visit: string | null; type: CommentType; service: string; text: string }[] }) {
   const t = a.totals;
   const r = await createReport({ title: `Patient Feedback: ${o.name}`, period: a.period ? `${survey.visit ? "Date of visit" : "Date answered"} ${fbDay(a.period.from)} - ${fbDay(a.period.to)}` : "No responses in this period", filters: o.filters, landscape: true, confidential: true });
   r.kpis([
@@ -202,7 +202,7 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     { label: "Satisfied", value: pctText(t.csat, 1), note: "Very Satisfied or Satisfied", accent: true },
     { label: "Very satisfied", value: pctText(t.verySatisfied, 1), note: t.average === null ? undefined : `Average ${t.average.toFixed(2)} of 5` },
     { label: "Would recommend", value: pctText(t.recommend, 1), note: t.recAnswers ? `${t.rec.Yes} yes, ${t.rec.Maybe} maybe, ${t.rec.No} no` : undefined },
-    { label: "Needs follow-up", value: count(a.unhappy.length), note: "Responses with a Dissatisfied rating" },
+    { label: "Needs improvement", value: count(o.improvements.reduce((n, d) => n + d.items.length, 0)), note: o.improvements.length ? `${o.improvements.length} departments to tap` : "Nothing stands out" },
   ]);
   if (o.findings.length) { r.heading("Interpretation & analysis"); r.findings(o.findings.map((f) => ({ label: f.label, value: "", text: f.text }))); }
   if (a.trend.length > 1) {
@@ -235,9 +235,12 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     r.heading("Who answered");
     profile.forEach((p) => r.table([p.column.text, "Responses", "Share"], p.items.map((i) => [i.name, count(i.value), pctText(i.value / p.answered)]), { right: [1, 2], widths: { 0: 120 } }));
   }
-  if (a.unhappy.length) {
-    r.heading("Needs follow-up", "Responses with a Dissatisfied (or worse) rating. Sheet row = the response's row in the Google Sheet.");
-    r.table(["Date of visit", "Service", "Low ratings", "What they said", "Row"], a.unhappy.map((u) => [fbDay(u.response.visit), u.service || "-", u.low.map((l) => `${l.answer}: ${l.question}`).join("\n"), u.comments.join(" / ") || "-", u.response.row]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 90, 4: 14 } });
+  if (o.improvements.length) {
+    r.heading("Needs improvement", "Suggested improvements from the ratings and comments in this period, by the department to tap, most urgent first.");
+    o.improvements.forEach((d) => {
+      r.note(d.department.toUpperCase());
+      r.table(["Suggested improvement", "Based on"], d.items.map((it) => [it.text, it.evidence.slice(0, 4).map((e) => `- ${e}`).join("\n") + (it.evidence.length > 4 ? `\n(+${it.evidence.length - 4} more)` : "")]), { fontSize: 7.5, widths: { 0: 110 } });
+    });
   }
   if (o.comments.length) {
     const label = (t: CommentType) => COMMENT_TYPES.find((c) => c.id === t)!.label;
