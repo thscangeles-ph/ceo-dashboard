@@ -326,3 +326,72 @@ export function feedbackFindings(a: FeedbackSummary) {
 export const pctText = (v: number | null | undefined, digits = 0) => (v === null || v === undefined ? "—" : `${(v * 100).toFixed(digits)}%`);
 export const dayText = (day: string | null, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" }) => (day ? new Date(`${day}T00:00:00Z`).toLocaleDateString("en-PH", { ...options, timeZone: "UTC" }) : "—");
 export const monthText = (key: string, long = false) => new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-PH", { month: long ? "long" : "short", year: long ? "numeric" : "2-digit", timeZone: "UTC" });
+
+// ---------------------------------------------------------------------------------------------
+// Patients' comments & experiences board (like the COMMENTS tab): every comment gets a type.
+
+export type CommentType = "positive" | "negative" | "suggestion" | "experience";
+export const COMMENT_TYPES: { id: CommentType; label: string; color: string }[] = [
+  { id: "positive", label: "Positive", color: "#b6d7a8" },
+  { id: "negative", label: "Negative", color: "#ea9999" },
+  { id: "suggestion", label: "Suggestion", color: "#ffe599" },
+  { id: "experience", label: "Experience", color: "#f9cb9c" },
+];
+// English and Tagalog words; the team can change any card's type, so these only make the first guess.
+const SUGGESTION = /\b(suggest\w*|should|please|pls|sana|dapat|improve\w*|recommend (that|to)|add(ing)? more|more (parking|seats|staff|chairs|space)|give (more|detailed)|will be good|would be (good|better|nice)|lagyan|maglagay|paki\w*|remind (patients|them|us)|i-text|tawagan)\b/i;
+const NEGATIVE = /(matagal|slow|\blate\b|wrong|\bmali\b|magulo|not in order|no response|unanswered|walang sumasagot|masungit|nakasimangot|kulang|\black\b|\bpoor\b|\brude\b|\bbad\b|difficult|mahirap|cancel|waiting time|\bdelay|bastos|disappoint|dissatisf|complain|reklamo|laging full|not attentive|hindi (maayos|sumasagot|nasagot))/i;
+const POSITIVE = /(good|great|excellent|satisf|thank|salamat|prompt|clean|organized|accommodat|friendly|\bok\b|okay|\bmura\b|cheaper|accessible|accesible|expectation|grateful|keep it up|complete|helpful|approachable|fast|maayos|mabait|magaling|recommend(ed)? (thsc|it)|at ease|comfortable)/i;
+
+/** The first guess for a comment's type, from its words and the question it answered. */
+export function guessCommentType(text: string, isExperience: boolean): CommentType {
+  if (/^the patient\b/i.test(text) || text.length > 220) return "experience";
+  if (SUGGESTION.test(text)) return "suggestion";
+  const bad = NEGATIVE.test(text), good = POSITIVE.test(text);
+  if (isExperience) return text.length <= 60 && bad !== good ? (bad ? "negative" : "positive") : "experience";
+  if (bad) return good && text.length > 80 ? "experience" : "negative";
+  return good ? "positive" : "experience";
+}
+/** Identifies a comment across reloads (rows can move in the sheet): the survey, the visit date and the text. */
+export function commentKey(source: string, visit: string | null, text: string) {
+  let h = 5381;
+  const s = text.trim().toLowerCase().replace(/\s+/g, " ");
+  for (let i = 0; i < s.length; i += 1) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return `${source}|${visit ?? "nodate"}|${h.toString(36)}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// "Interpretation & analysis" for one service in one month, compared with the month before.
+
+type ServiceResult = FeedbackSummary["services"][number];
+const short = (q: { column: Column }) => `"${q.column.text.replace(/^\d+\.\s*/, "").replace(/\?$/, "")}"`;
+export function monthNote(month: string, cur: ServiceResult | undefined, prev: ServiceResult | undefined, prevMonth: string | null) {
+  const name = monthText(month, true).split(" ")[0];
+  if (!cur || !cur.answers) return cur?.responses ? `${name} had ${cur.responses} response${cur.responses === 1 ? "" : "s"}, all answered N/A.` : `No responses in ${name}.`;
+  const count = (p: number) => cur.questions.reduce((n, q) => n + (q.counts[p] || 0), 0);
+  const neutral = count(3), low = count(2) + count(1);
+  const parts: string[] = [];
+  if (!neutral && !low) parts.push(`${name} was highly positive: every rating was Very Satisfied or Satisfied (${pctText(cur.verySatisfied)} Very Satisfied).`);
+  else if (low) {
+    const where = cur.questions.filter((q) => (q.counts[2] || 0) + (q.counts[1] || 0)).map(short).slice(0, 2).join(" and ");
+    parts.push(`${name} had ${low} Dissatisfied rating${low === 1 ? "" : "s"}, on ${where}; ${pctText(cur.csat)} of ratings were still Satisfied or better.`);
+  } else {
+    const where = [...cur.questions].sort((x, y) => (y.counts[3] || 0) - (x.counts[3] || 0)).filter((q) => q.counts[3]).slice(0, 2).map(short).join(" and ");
+    parts.push(`${name} was mostly positive (${pctText(cur.csat)} satisfied), with ${neutral} Neutral rating${neutral === 1 ? "" : "s"}, mainly on ${where}.`);
+  }
+  if (prev && prev.answers && prevMonth) {
+    const pName = monthText(prevMonth, true).split(" ")[0];
+    const d = ((cur.verySatisfied ?? 0) - (prev.verySatisfied ?? 0)) * 100;
+    const pLow = prev.questions.reduce((n, q) => n + (q.counts[2] || 0) + (q.counts[1] || 0) + (q.counts[3] || 0), 0);
+    const shift = Math.abs(d) < 3 ? `Very Satisfied ratings held steady compared with ${pName} (${pctText(prev.verySatisfied)})` : d > 0 ? `Compared with ${pName}, Very Satisfied ratings rose from ${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)}` : `Compared with ${pName}, more ratings shifted from Very Satisfied to Satisfied (${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)} Very Satisfied)`;
+    parts.push(`${shift}${pLow !== neutral + low ? `, and Neutral or lower ratings went from ${pLow} to ${neutral + low}` : ""}.`);
+  } else if (prevMonth) parts.push(`There were no ratings for this service in ${monthText(prevMonth, true).split(" ")[0]} to compare with.`);
+  const answered = cur.questions.filter((q) => q.answers);
+  const best = answered.filter((q) => q.csat === 1 && (q.counts[5] || 0) === q.answers);
+  const weakest = [...answered].sort((x, y) => (x.average ?? 5) - (y.average ?? 5))[0];
+  if (best.length && best.length < answered.length) parts.push(`${best.length === 1 ? `${short(best[0])} was` : `${best.length} questions were`} rated Very Satisfied by everyone.`);
+  if (weakest && (weakest.average ?? 5) < 4.8 && (neutral || low)) parts.push(`To watch: ${short(weakest)} (average ${weakest.average!.toFixed(1)} of 5).`);
+  const naHeavy = cur.questions.filter((q) => q.na >= Math.max(2, (q.answers + q.na) / 2));
+  if (naHeavy.length) parts.push(`${naHeavy.map(short).slice(0, 2).join(" and ")} ${naHeavy.length === 1 ? "was" : "were"} mostly N/A.`);
+  if (cur.responses < 3) parts.push(`Only ${cur.responses} response${cur.responses === 1 ? "" : "s"}, so read this with caution.`);
+  return parts.join(" ");
+}

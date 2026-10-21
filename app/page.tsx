@@ -9,10 +9,10 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember,
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, loadCloud, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, loadCloud, loadFeedbackTags, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, saveFeedbackTag, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
 import { PodcastDashboard } from "@/components/podcast";
 import { FeedbackDashboard } from "@/components/feedback";
-import type { FeedbackSheet } from "@/lib/feedback";
+import type { CommentType, FeedbackSheet } from "@/lib/feedback";
 import type { PodcastStore } from "@/lib/podcast";
 import { localPodcastStore } from "@/lib/podcast";
 import { AcquisitionDashboard } from "@/components/acquisition";
@@ -291,6 +291,10 @@ export default function Home() {
     if (!response.ok) throw new Error(body.error || `The server returned HTTP ${response.status}.`);
     return body as FeedbackSheet;
   }, []);
+  // Comment types on the feedback comments board, shared by the team.
+  const loadTags = useCallback(() => loadFeedbackTags(getCloud()!), []);
+  const actorEmail = auth.status === "signedIn" ? auth.email : "";
+  const saveTag = useCallback((key: string, type: CommentType) => saveFeedbackTag(getCloud()!, key, type, actorEmail), [actorEmail]);
   const loadInPerson = useCallback((fresh: boolean) => loadFeedback("inperson", fresh), [loadFeedback]);
   const loadQr = useCallback((fresh: boolean) => loadFeedback("qr", fresh), [loadFeedback]);
 
@@ -623,11 +627,11 @@ export default function Home() {
         )}
 
         {!restoring && tab === "feedback" && role !== "concierge" && (
-          <FeedbackDashboard key="inperson" name="In-Person Survey" load={loadInPerson}
+          <FeedbackDashboard key="inperson" source="inperson" name="In-Person Survey" load={loadInPerson} loadTags={cloud ? loadTags : undefined} saveTag={cloud ? saveTag : undefined}
             intro="The paper survey patients answer at the clinic, typed into the feedback form, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />
         )}
         {!restoring && tab === "feedbackQr" && role !== "concierge" && (
-          <FeedbackDashboard key="qr" name="QR Survey" load={loadQr}
+          <FeedbackDashboard key="qr" source="qr" name="QR Survey" load={loadQr} loadTags={cloud ? loadTags : undefined} saveTag={cloud ? saveTag : undefined}
             intro="The survey patients answer themselves by scanning the QR code, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />
         )}
 

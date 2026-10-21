@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Eye, Info, MessageSquareText, RefreshCw, Search, Sheet } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, Info, RefreshCw, Search, Sheet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
-import { analyzeFeedback, buildSurvey, dayText, feedbackFindings, monthText, pctText } from "@/lib/feedback";
+import type { CommentType } from "@/lib/feedback";
+import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthNote, monthText, pctText } from "@/lib/feedback";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
 const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
@@ -22,28 +23,45 @@ const POLL_MS = 120_000;
  * period follows each patient's date of visit (or, in a sheet without one, the day they answered). Used for both
  * the in-person survey and the QR survey. Admin, ManCom, Doctors and Marketing can open it.
  */
-export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean) => Promise<FeedbackSheet>; name: string; intro: string }) {
+export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag }: {
+  load: (fresh: boolean) => Promise<FeedbackSheet>; name: string; intro: string;
+  /** "inperson" or "qr": keeps each survey's comment types apart. */
+  source: string;
+  /** The comment types the team set (shared), and saving one; absent without accounts. */
+  loadTags?: () => Promise<{ tags: Record<string, CommentType>; missing: boolean }>;
+  saveTag?: (key: string, type: CommentType) => Promise<void>;
+}) {
   const [sheet, setSheet] = useState<FeedbackSheet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [preset, setPreset] = useState("all");
   const [filters, setFilters] = useState<Filters>({ from: "", to: "", service: "" });
-  const [kind, setKind] = useState("all");
-  const [onlyLow, setOnlyLow] = useState(false);
   const [query, setQuery] = useState("");
-  const [shown, setShown] = useState(40);
+  const [month, setMonthState] = useState<string | null>(null);
+  const setMonth = (m: string) => setMonthState(m);
+  const [tags, setTags] = useState<Record<string, CommentType>>({});
+  const [tagNote, setTagNote] = useState("");
+  const [savingKey, setSavingKey] = useState("");
+  const [hidden, setHidden] = useState<Set<CommentType>>(new Set());
 
   const refresh = useCallback(async (fresh: boolean) => {
     setLoading(true);
     try { setSheet(await load(fresh)); setError(""); } catch (e) { setError((e as Error).message); }
     setLoading(false);
   }, [load]);
+  const refreshTags = useCallback(async () => {
+    if (!loadTags) return;
+    try {
+      const r = await loadTags(); setTags(r.tags);
+      setTagNote(r.missing ? "Changing a comment's type needs the updated supabase/schema.sql: run it once in Supabase → SQL Editor." : "");
+    } catch (e) { setTagNote((e as Error).message); }
+  }, [loadTags]);
   useEffect(() => {
-    const first = setTimeout(() => void refresh(false), 0);
-    // New responses show up while the tab is open.
-    const poll = setInterval(() => { if (document.visibilityState === "visible") void refresh(false); }, POLL_MS);
+    const first = setTimeout(() => { void refresh(false); void refreshTags(); }, 0);
+    // New responses, and comment types changed by others, show up while the tab is open.
+    const poll = setInterval(() => { if (document.visibilityState === "visible") { void refresh(false); void refreshTags(); } }, POLL_MS);
     return () => { clearTimeout(first); clearInterval(poll); };
-  }, [refresh]);
+  }, [refresh, refreshTags]);
 
   const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow) : null), [sheet]);
   const a = useMemo(() => (survey ? analyzeFeedback(survey, filters) : null), [survey, filters]);
@@ -71,8 +89,42 @@ export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean
   const t = a?.totals;
   const delta = a?.previous && a.previous.responses >= 5 && t?.csat != null && a.previous.csat !== null ? (t.csat - a.previous.csat) * 100 : null;
 
-  const comments = (a?.comments || []).filter((c) => (kind === "all" || c.kind === kind) && (!onlyLow || c.low) && (!query.trim() || c.text.toLowerCase().includes(query.trim().toLowerCase())));
-  const kinds = Array.from(new Set((a?.comments || []).map((c) => c.kind)));
+  // Monthly results: the months in the chosen period, the latest first chosen; each compared with the month before.
+  const monthKeys = useMemo(() => Array.from(new Set((a?.rows || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort(), [a]);
+  const shownMonth = month && monthKeys.includes(month) ? month : monthKeys.at(-1) ?? null;
+  const monthly = useMemo(() => {
+    if (!survey || !shownMonth) return null;
+    const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: day(new Date(y, m, 0).getTime()) }; };
+    const [y, m] = shownMonth.split("-").map(Number);
+    const prevKey = day(new Date(y, m - 2, 1).getTime()).slice(0, 7);
+    const cur = analyzeFeedback(survey, { ...range(shownMonth), service: filters.service });
+    const prev = analyzeFeedback(survey, { ...range(prevKey), service: filters.service });
+    const hasVeryLow = cur.services.some((x) => x.questions.some((q) => q.counts[1]));
+    return { cur, prev: prev.totals.responses ? prev : null, prevKey: prev.totals.responses ? prevKey : null, hasVeryLow };
+  }, [survey, shownMonth, filters.service]);
+
+  // The comments board: one column per month, each comment with the team's type or the first guess.
+  const board = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const all = (a?.comments || []).map((c) => {
+      const key = commentKey(source, c.response.visit, c.text);
+      return { ...c, key, type: tags[key] ?? guessCommentType(c.text, c.kind === "Previous experience") };
+    }).filter((c) => !needle || c.text.toLowerCase().includes(needle) || c.service.toLowerCase().includes(needle));
+    const counts = Object.fromEntries(COMMENT_TYPES.map((ct) => [ct.id, all.filter((c) => c.type === ct.id).length])) as Record<CommentType, number>;
+    const shown = all.filter((c) => !hidden.has(c.type));
+    const order = Object.fromEntries(COMMENT_TYPES.map((ct, i) => [ct.id, i]));
+    const keys = Array.from(new Set(all.map((c) => c.response.visit?.slice(0, 7) || "undated"))).sort();
+    const columns = keys.map((mk) => ({ month: mk, items: shown.filter((c) => (c.response.visit?.slice(0, 7) || "undated") === mk).sort((x, y) => order[x.type] - order[y.type] || (x.response.visit ?? "").localeCompare(y.response.visit ?? "")) }));
+    return { columns, counts };
+  }, [a, tags, query, hidden, source]);
+  const changeType = async (key: string, type: CommentType) => {
+    if (!saveTag) return;
+    setSavingKey(key); setTagNote("");
+    const before = tags[key];
+    setTags((t) => ({ ...t, [key]: type }));
+    try { await saveTag(key, type); } catch (e) { setTags((t) => { const n = { ...t }; if (before) n[key] = before; else delete n[key]; return n; }); setTagNote((e as Error).message); }
+    setSavingKey("");
+  };
   const pointsOf = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) => ({ p, label: labels?.[p] ?? String(p) }));
 
   return (
@@ -82,8 +134,8 @@ export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean
           <h1>Patient Feedback: {name}</h1>
           <p className="sub">{intro}</p>
           <div className="crm-actions no-print">
-            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
-            <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
+            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, service: filters.service, comments: board.columns.flatMap((col) => col.items).map((c) => ({ visit: c.response.visit, type: c.type, service: c.service, text: c.text })), filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
+            <button type="button" className="btn btn-outline" onClick={() => { void refresh(true); void refreshTags(); }} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </div>
         <div className="period">
@@ -205,30 +257,51 @@ export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean
             </div>
           </section>
 
-          <section>
-            <h2>Ratings by question</h2>
-            <p className="section-note">Each service&apos;s questions: how many patients gave each answer. Hover a column for the question and its numbers; the questions are listed under each chart.</p>
-            <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
-            <div className="fb-service-grid">
-              {a.services.map((x) => {
-                const lowest = Math.min(...x.questions.map((q) => q.csat ?? 1));
-                return (
-                  <div key={x.section.name} className="panel fb-service">
-                    <div className="queue-head"><h3>{x.section.name}</h3><span className="fb-service-meta">{pctText(x.csat)} satisfied · {num(x.responses)} response{x.responses === 1 ? "" : "s"}</span></div>
-                    <QuestionColumns questions={x.questions} points={pointsOf(x.questions[0]?.column.labels)} />
-                    <ol className="fb-qlist">
-                      {x.questions.map((q, i) => (
-                        <li key={q.column.index} className={q.csat !== null && q.csat < 1 && q.csat === lowest ? "low" : undefined}>
-                          <b>Q{i + 1}</b><span>{q.column.text.replace(/^\d+\.\s*/, "")}</span>
-                          <em>{q.answers ? pctText(q.csat) : "—"}{q.na ? ` · ${q.na} N/A` : ""}{q.csat !== null && q.csat < 1 && q.csat === lowest ? " · lowest" : ""}</em>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          {monthKeys.length > 0 && (
+            <section>
+              <h2>Monthly results by service</h2>
+              <p className="section-note">Like the CHARTS &amp; TABLE tab: for each month, every service&apos;s answer counts per question, the chart, and an interpretation compared with the month before. Choose a month:</p>
+              <div className="chips no-print fb-month-chips" role="group" aria-label="Month">
+                {monthKeys.map((m) => <button key={m} type="button" className={`chip-btn${m === shownMonth ? " on" : ""}`} aria-pressed={m === shownMonth} onClick={() => setMonth(m)}>{monthText(m, true)}</button>)}
+              </div>
+              {monthly && (
+                <>
+                  <div className="fb-month-banner">{monthText(shownMonth!, true).split(" ")[0].toUpperCase()} {monthText(shownMonth!, true).split(" ")[1]} = {num(monthly.cur.totals.responses)} TOTAL RESPONSE{monthly.cur.totals.responses === 1 ? "" : "S"}</div>
+                  <AnswerLegend points={[...pointsOf(monthly.cur.services[0]?.questions[0]?.column.labels).filter((p) => p.p >= 2 || monthly.hasVeryLow)]} na />
+                  {monthly.cur.services.map((x) => {
+                    const points = pointsOf(x.questions[0]?.column.labels).filter((p) => p.p >= 2 || monthly.hasVeryLow);
+                    return (
+                      <div key={x.section.name} className="panel fb-svc">
+                        <h3 className="fb-svc-title">{x.section.name.toUpperCase()} - {num(x.responses)}</h3>
+                        <div className="fb-svc-grid">
+                          <div className="table-scroll">
+                            <table className="fb-counts">
+                              <thead><tr><th>Question</th>{points.map((p) => <th key={p.p} className="num">{p.label}</th>)}<th className="num">N/A</th></tr></thead>
+                              <tbody>
+                                {x.questions.map((q) => (
+                                  <tr key={q.column.index}>
+                                    <td className="name">{q.column.text}</td>
+                                    {points.map((p) => <td key={p.p} className={`num${p.p <= 2 && q.counts[p.p] ? " fb-bad" : ""}`}>{q.counts[p.p] || 0}</td>)}
+                                    <td className="num muted">{q.na}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="fb-svc-chart">
+                            <div className="fb-chart-title">{x.section.name.toUpperCase()} · {num(x.responses)} RESPONSE{x.responses === 1 ? "" : "S"} ({monthText(shownMonth!, true).split(" ")[0].toUpperCase()})</div>
+                            <GroupedQuestions questions={x.questions} points={points} />
+                          </div>
+                          <div className="fb-interp"><strong>INTERPRETATION &amp; ANALYSIS:</strong><p>{monthNote(shownMonth!, x, monthly.prev?.services.find((p) => p.section.name === x.section.name), monthly.prevKey)}</p></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!monthly.cur.services.length && <div className="panel"><p className="empty-note">No ratings in this month.</p></div>}
+                </>
+              )}
+            </section>
+          )}
 
           {a.profile.length > 0 && (
             <section>
@@ -271,24 +344,42 @@ export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean
 
           <section>
             <div className="section-head-row">
-              <div><h2>Comments &amp; experiences</h2><p className="section-note">Everything patients wrote, newest visit first ({num(comments.length)} of {num(a.comments.length)}). N/A answers are left out.</p></div>
+              <div><h2>Patients&apos; comments &amp; experiences</h2><p className="section-note">Everything patients wrote, by month, like the COMMENTS tab. Each card&apos;s type is a first guess from its words: change it with the menu on the card and it is saved for the whole team.</p></div>
               <div className="filterbar no-print fb-comment-filters">
-                <label>Show<select value={kind} onChange={(e) => setKind(e.target.value)}><option value="all">All</option>{kinds.map((k) => <option key={k} value={k}>{k}</option>)}</select></label>
                 <label className="trk-search">Search<span><Search size={15} aria-hidden /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Word in the comment" /></span></label>
-                <label className="remember"><input type="checkbox" checked={onlyLow} onChange={(e) => setOnlyLow(e.target.checked)} /> Only from low ratings</label>
               </div>
             </div>
-            {comments.length ? (
-              <ul className="fb-comments">
-                {comments.slice(0, shown).map((c, i) => (
-                  <li key={`${c.response.row}-${i}`} className={c.low ? "low" : undefined}>
-                    <div className="fb-comment-meta"><MessageSquareText size={13} aria-hidden />{dayText(c.response.visit)} · {c.service} · {c.kind}{c.low && <span className="fb-tag">Low rating</span>}</div>
-                    <p>{c.text}</p>
-                  </li>
+            <div className="fb-legend-board no-print" role="group" aria-label="Show comment types">
+              <span>LEGEND</span>
+              {COMMENT_TYPES.map((ct) => (
+                <button key={ct.id} type="button" aria-pressed={!hidden.has(ct.id)} className={hidden.has(ct.id) ? "off" : undefined} style={{ background: ct.color }}
+                  onClick={() => setHidden((h) => { const n = new Set(h); if (n.has(ct.id)) n.delete(ct.id); else n.add(ct.id); return n; })}>
+                  {ct.label.toUpperCase()} · {board.counts[ct.id]}
+                </button>
+              ))}
+            </div>
+            {tagNote && <p className="drill-meta" role="status">{tagNote}</p>}
+            {board.columns.length ? (
+              <div className="fb-board">
+                {board.columns.map((col) => (
+                  <div key={col.month} className="fb-board-col">
+                    <h3>{monthText(col.month, true).split(" ")[0].toUpperCase()}<small>{monthText(col.month, true).split(" ")[1]} · {col.items.length}</small></h3>
+                    {col.items.map((c) => (
+                      <div key={c.key} className="fb-card" style={{ background: COMMENT_TYPES.find((ct) => ct.id === c.type)!.color }}>
+                        <p>{c.text}</p>
+                        <div className="fb-card-meta">
+                          <span>{c.service} · {dayText(c.response.visit, { month: "short", day: "numeric" })}{c.low ? " · low rating" : ""}</span>
+                          <select aria-label="Comment type" value={c.type} disabled={!saveTag || savingKey === c.key} onChange={(e) => void changeType(c.key, e.target.value as CommentType)}>
+                            {COMMENT_TYPES.map((ct) => <option key={ct.id} value={ct.id}>{ct.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                    {!col.items.length && <p className="empty-note">No comments.</p>}
+                  </div>
                 ))}
-              </ul>
+              </div>
             ) : <div className="panel"><p className="empty-note">No comments match.</p></div>}
-            {comments.length > shown && <button type="button" className="btn btn-outline no-print" style={{ marginTop: 12 }} onClick={() => setShown((n) => n + 40)}>Show more</button>}
           </section>
 
           <footer className="source">
@@ -308,8 +399,8 @@ const sumCounts = (questions: { counts: Record<number, number> }[]) => {
   return out;
 };
 
-function AnswerLegend({ points }: { points: Point[] }) {
-  return <div className="mix-legend fb-legend">{points.map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}</div>;
+function AnswerLegend({ points, na }: { points: Point[]; na?: boolean }) {
+  return <div className="mix-legend fb-legend">{points.map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}{na && <span><i style={{ background: NA_COLOR }} />N/A</span>}</div>;
 }
 
 /** Splits a category name into short lines for the axis under a column. */
@@ -378,18 +469,20 @@ function ServiceColumns({ rows, points, selected, onSelect }: { rows: { name: st
   );
 }
 
-/** One service's questions as stacked columns of patients (Q1, Q2 …), Very Satisfied at the bottom. */
-function QuestionColumns({ questions, points }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[] }) {
-  const data = questions.map((q, i) => ({ label: `Q${i + 1}`, text: q.column.text, na: q.na, ...Object.fromEntries(points.map((p) => [`c${p.p}`, q.counts[p.p] || 0])) }));
+const NA_COLOR = "#7f7f7f";
+/** One service's questions in one month as grouped columns (one per answer), like the charts in the CHARTS & TABLE tab. */
+function GroupedQuestions({ questions, points }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[] }) {
+  const data = questions.map((q) => ({ label: q.column.text.length > 16 ? `${q.column.text.slice(0, 15)}…` : q.column.text, text: q.column.text, na: q.na, NA: q.na, ...Object.fromEntries(points.map((p) => [`c${p.p}`, q.counts[p.p] || 0])) }));
   return (
-    <div className="chart-box" style={{ height: 230 }}>
+    <div className="chart-box" style={{ height: 300 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="18%">
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 24 }} barCategoryGap="16%" barGap={1}>
           <CartesianGrid vertical={false} stroke="var(--line)" />
-          <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval={0} />
-          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+          <XAxis dataKey="label" interval={0} angle={-35} textAnchor="end" height={78} tick={{ ...axisTick, fontFamily: "var(--font-sans-stack)", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "var(--line)" }} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
           <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
-          {points.map((p, i, list) => <Bar key={p.p} dataKey={`c${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} maxBarSize={44} />)}
+          {points.map((p) => <Bar key={p.p} dataKey={`c${p.p}`} fill={POINT_COLOR[p.p]} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} />)}
+          <Bar dataKey="NA" fill={NA_COLOR} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

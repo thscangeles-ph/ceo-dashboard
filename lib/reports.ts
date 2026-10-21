@@ -6,8 +6,8 @@ import { DUE_LABEL } from "./crm";
 import { effectiveResponded } from "./lead";
 import type { InquiryRow } from "./parse";
 import { createReport, fileRange } from "./pdf";
-import type { FeedbackSummary, Survey } from "./feedback";
-import { dayText as fbDay, pctText } from "./feedback";
+import type { CommentType, FeedbackSummary, Survey } from "./feedback";
+import { analyzeFeedback, COMMENT_TYPES, dayText as fbDay, monthNote, monthText, pctText } from "./feedback";
 import type { Channel, PodcastPlan, Snapshot, Video } from "./podcast";
 import { engagementRate, episodeName, formatOf, FORMATS, localDay, PLAN_FORMATS, PLAN_STATUSES, planAlert, sumKnown, videoIdOf } from "./podcast";
 import type { NextStep } from "./tracker";
@@ -194,7 +194,7 @@ export async function podcastReport(o: { channel: Channel | null; videos: Video[
 }
 
 /** Patient Feedback: the survey results for the period and service chosen on the tab. */
-export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { name: string; findings: { label: string; text: string }[]; filters: string }) {
+export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { name: string; findings: { label: string; text: string }[]; filters: string; service: string; comments: { visit: string | null; type: CommentType; service: string; text: string }[] }) {
   const t = a.totals;
   const r = await createReport({ title: `Patient Feedback: ${o.name}`, period: a.period ? `${survey.visit ? "Date of visit" : "Date answered"} ${fbDay(a.period.from)} - ${fbDay(a.period.to)}` : "No responses in this period", filters: o.filters, landscape: true, confidential: true });
   r.kpis([
@@ -214,10 +214,21 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     [...a.services.map((s) => [s.section.name, count(s.responses), pctText(s.verySatisfied), pctText(s.csat), s.average === null ? "-" : s.average.toFixed(2), count(s.dissatisfied), pctText(s.recommend), count(s.comments)]),
       ...(a.services.length > 1 ? [["All services", count(t.responses), pctText(t.verySatisfied), pctText(t.csat), t.average === null ? "-" : t.average.toFixed(2), count(t.dissatisfied), pctText(t.recommend), count(t.comments)]] : [])],
     { right: [1, 2, 3, 4, 5, 6, 7], boldLast: a.services.length > 1 });
-  a.services.forEach((s) => {
-    const labels = [5, 4, 3, 2, 1].map((p) => s.questions[0]?.column.labels?.[p] ?? String(p));
-    r.heading(`${s.section.name}: ${count(s.responses)} response${s.responses === 1 ? "" : "s"}, ${pctText(s.csat)} satisfied`);
-    r.table(["Question", ...labels, "N/A", "Satisfied"], s.questions.map((q) => [q.column.text, ...[5, 4, 3, 2, 1].map((p) => count(q.counts[p] || 0)), count(q.na), pctText(q.csat)]), { right: [1, 2, 3, 4, 5, 6, 7], widths: { 0: 120 }, fontSize: 7.5 });
+  // Month by month, like the CHARTS & TABLE tab: each service's answer counts and the interpretation.
+  const monthKeys = Array.from(new Set(a.rows.map((x) => x.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort();
+  const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: `${key}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` }; };
+  monthKeys.forEach((key) => {
+    const [y, m] = key.split("-").map(Number);
+    const prevKey = `${new Date(y, m - 2, 1).getFullYear()}-${String(new Date(y, m - 2, 1).getMonth() + 1).padStart(2, "0")}`;
+    const cur = analyzeFeedback(survey, { ...range(key), service: o.service });
+    const prev = analyzeFeedback(survey, { ...range(prevKey), service: o.service });
+    r.heading(`${monthText(key, true).toUpperCase()} = ${count(cur.totals.responses)} TOTAL RESPONSES`);
+    cur.services.forEach((x) => {
+      const points = [5, 4, 3, 2, 1].filter((p) => p >= 2 || cur.services.some((y2) => y2.questions.some((q) => q.counts[1])));
+      r.note(`${x.section.name.toUpperCase()} - ${count(x.responses)}`);
+      r.table(["Question", ...points.map((p) => x.questions[0]?.column.labels?.[p] ?? String(p)), "N/A"], x.questions.map((q) => [q.column.text, ...points.map((p) => count(q.counts[p] || 0)), count(q.na)]), { right: points.map((_, i) => i + 1).concat(points.length + 1), widths: { 0: 140 }, fontSize: 7.5 });
+      r.note(`Interpretation & analysis: ${monthNote(key, x, prev.totals.responses ? prev.services.find((p2) => p2.section.name === x.section.name) : undefined, prev.totals.responses ? prevKey : null)}`);
+    });
   });
   const profile = a.profile.filter((p) => p.column !== survey.router);
   if (profile.length) {
@@ -228,9 +239,10 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     r.heading("Needs follow-up", "Responses with a Dissatisfied (or worse) rating. Sheet row = the response's row in the Google Sheet.");
     r.table(["Date of visit", "Service", "Low ratings", "What they said", "Row"], a.unhappy.map((u) => [fbDay(u.response.visit), u.service || "-", u.low.map((l) => `${l.answer}: ${l.question}`).join("\n"), u.comments.join(" / ") || "-", u.response.row]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 90, 4: 14 } });
   }
-  if (a.comments.length) {
-    r.heading("Comments & experiences", a.comments.length > 60 ? `The newest 60 of ${count(a.comments.length)}.` : undefined);
-    r.table(["Date of visit", "Service", "Type", "Comment"], a.comments.slice(0, 60).map((c) => [fbDay(c.response.visit), c.service, c.kind, `${c.text}${c.low ? " (low rating)" : ""}`]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 32 } });
+  if (o.comments.length) {
+    const label = (t: CommentType) => COMMENT_TYPES.find((c) => c.id === t)!.label;
+    r.heading("Patients' comments & experiences", "By month of visit; each comment's type as shown on the dashboard (Positive, Negative, Suggestion, Experience).");
+    r.table(["Month", "Type", "Service", "Comment"], [...o.comments].sort((x, y) => (x.visit ?? "").localeCompare(y.visit ?? "")).map((c) => [c.visit ? monthText(c.visit.slice(0, 7), true) : "-", label(c.type), c.service, c.text]), { fontSize: 7.5, widths: { 0: 26, 1: 24, 2: 44 } });
   }
   r.save(`THSC Patient Feedback ${o.name} ${a.period ? `${a.period.from} to ${a.period.to}` : fileRange(new Date(), new Date())}.pdf`);
 }

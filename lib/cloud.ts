@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { AcquisitionSpend } from "./acquisition";
 import { spendKey } from "./acquisition";
 import type { InquiryRow, SalesRow, SheetSummary } from "./parse";
+import type { CommentType } from "./feedback";
 import type { ImportedFile, PodcastData, PodcastItem, PodcastKind, PodcastPlan, Snapshot } from "./podcast";
 import { sheetKey } from "./parse";
 
@@ -249,6 +250,24 @@ export async function savePodcastItem(sb: SupabaseClient, kind: PodcastKind, id:
 }
 export async function deletePodcastItem(sb: SupabaseClient, kind: PodcastKind, id: string) {
   const { error } = await sb.from("podcast_items").delete().eq("key", podcastKey(kind, id));
+  if (error) throw new Error(friendly(error.message));
+}
+
+/** Comment types the team set on the Patient Feedback comments board (feedback_tags), by comment key. */
+export async function loadFeedbackTags(sb: SupabaseClient): Promise<{ tags: Record<string, CommentType>; missing: boolean }> {
+  const tags: Record<string, CommentType> = {};
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from("feedback_tags").select("key, data").order("key").range(from, from + PAGE - 1);
+    if (error) {
+      if (/does not exist|could not find the table/i.test(error.message)) return { tags, missing: true };
+      throw new Error(friendly(error.message));
+    }
+    (data || []).forEach((r: { key: string; data: { type?: CommentType } }) => { if (r.data?.type) tags[r.key] = r.data.type; });
+    if (!data || data.length < PAGE) return { tags, missing: false };
+  }
+}
+export async function saveFeedbackTag(sb: SupabaseClient, key: string, type: CommentType, by: string) {
+  const { error } = await sb.from("feedback_tags").upsert({ key, data: { type, by, at: new Date().toISOString() } }, { onConflict: "key" });
   if (error) throw new Error(friendly(error.message));
 }
 
