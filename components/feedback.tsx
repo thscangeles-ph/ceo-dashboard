@@ -19,9 +19,10 @@ const POLL_MS = 120_000;
 
 /**
  * The Patient Feedback tab: survey results from the feedback form's Google Sheet (RAW DATA), live. The
- * period follows each patient's date of visit. Admin, ManCom, Doctors and Marketing can open it.
+ * period follows each patient's date of visit (or, in a sheet without one, the day they answered). Used for both
+ * the in-person survey and the QR survey. Admin, ManCom, Doctors and Marketing can open it.
  */
-export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<FeedbackSheet> }) {
+export function FeedbackDashboard({ load, name, intro }: { load: (fresh: boolean) => Promise<FeedbackSheet>; name: string; intro: string }) {
   const [sheet, setSheet] = useState<FeedbackSheet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -63,7 +64,10 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
   const setDate = (key: "from" | "to", value: string) => { setPreset("custom"); setFilters((f) => ({ ...f, [key]: value })); };
 
   const periodText = a?.period ? (a.period.from === a.period.to ? dayText(a.period.from) : `${dayText(a.period.from)} – ${dayText(a.period.to)}`) : sheet?.status === "ok" ? "No responses in this period" : "—";
-  const rangeText = filters.from || filters.to ? `${filters.from ? dayText(filters.from) : "first visit"} – ${filters.to ? dayText(filters.to) : "latest visit"}` : "all dates of visit";
+  // The period is the date of visit; a sheet without one (a self-service form) uses the day the patient answered.
+  const dateName = survey && !survey.visit ? "Date answered" : "Date of visit";
+  const unit = survey && !survey.visit ? "answer" : "visit";
+  const rangeText = filters.from || filters.to ? `${filters.from ? dayText(filters.from) : `first ${unit}`} – ${filters.to ? dayText(filters.to) : `latest ${unit}`}` : unit === "visit" ? "all dates of visit" : "all dates answered";
   const t = a?.totals;
   const delta = a?.previous && a.previous.responses >= 5 && t?.csat != null && a.previous.csat !== null ? (t.csat - a.previous.csat) * 100 : null;
 
@@ -75,15 +79,15 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
     <>
       <header className="top">
         <div>
-          <h1>Patient Feedback</h1>
-          <p className="sub">Survey results from the THSC feedback form, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said</p>
+          <h1>Patient Feedback: {name}</h1>
+          <p className="sub">{intro}</p>
           <div className="crm-actions no-print">
-            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { findings, filters: [`Date of visit: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
+            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
             <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </div>
         <div className="period">
-          Date of visit<br /><strong>{periodText}</strong>
+          {dateName}<br /><strong>{periodText}</strong>
           <div className="filters-note">{sheet?.status === "ok" ? `Live from Google Sheets · updated ${new Date(sheet.fetchedAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}` : loading ? "Connecting to Google Sheets…" : "Not connected"}</div>
         </div>
       </header>
@@ -110,7 +114,7 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
           <div className="filterbar no-print">
             <label>Period
               <select value={preset} onChange={(e) => choosePreset(e.target.value)}>
-                <option value="all">All dates of visit</option>
+                <option value="all">{unit === "visit" ? "All dates of visit" : "All dates answered"}</option>
                 {months.map((m) => <option key={m} value={`m:${m}`}>{monthText(m, true)}</option>)}
                 <option value="30d">Last 30 days</option>
                 <option value="90d">Last 90 days</option>
@@ -128,7 +132,7 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
               </select>
             </label>
           </div>
-          <p className="click-hint no-print"><Sheet size={15} aria-hidden />Every response in the sheet&apos;s {sheet!.tab} tab, by date of visit; new responses appear within a few minutes. N/A answers are left out of the percentages.</p>
+          <p className="click-hint no-print"><Sheet size={15} aria-hidden />Every response in the sheet&apos;s {sheet!.tab} tab, by {dateName.toLowerCase()}; new responses appear within a few minutes. N/A answers are left out of the percentages.</p>
 
           <div className="kpis">
             <div className="kpi"><div className="label">Responses</div><div className="value">{num(t.responses)}</div><div className="note">{a.previous ? `${num(a.previous.responses)} in the previous period` : `${num(survey.responses.length)} in the sheet${a.undated ? ` · ${a.undated} without a visit date` : ""}`}</div></div>
@@ -151,7 +155,7 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
           {a.trend.length > 0 && (
             <section>
               <h2>Over time</h2>
-              <p className="section-note">By {a.byMonth ? "month" : "week"} of visit.</p>
+              <p className="section-note">{unit === "visit" ? `By ${a.byMonth ? "month" : "week"} of visit.` : `By ${a.byMonth ? "month" : "week"} the survey was answered.`}</p>
               <div className="grid-even">
                 <div className="panel">
                   <h3>Responses</h3>
@@ -203,7 +207,7 @@ export function FeedbackDashboard({ load }: { load: (fresh: boolean) => Promise<
 
           <section>
             <h2>Ratings by question</h2>
-            <p className="section-note">Each service&apos;s questions, like the CHARTS &amp; TABLE tab: how many patients gave each answer. Hover a column for the question and its numbers; the questions are listed under each chart.</p>
+            <p className="section-note">Each service&apos;s questions: how many patients gave each answer. Hover a column for the question and its numbers; the questions are listed under each chart.</p>
             <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
             <div className="fb-service-grid">
               {a.services.map((x) => {

@@ -4,8 +4,15 @@
 import { createSign } from "node:crypto";
 import type { FeedbackSheet } from "@/lib/feedback";
 
-// The clinic's feedback responses sheet (its ID is in the sheet's link; it is not a secret).
-const DEFAULT_SHEET_ID = "1Hxyp-FWC3M___dVTR_wuZRI3L22MBWClj4ncPD-YUU4";
+/**
+ * The clinic's two feedback sheets: the in-person (paper) survey typed into the form, and the QR survey
+ * patients fill in themselves. A sheet's ID is in its link and isn't a secret; the sheets stay private.
+ */
+export type FeedbackSource = "inperson" | "qr";
+const SOURCES: Record<FeedbackSource, { label: string; id: string; idVar: string; tabVar: string }> = {
+  inperson: { label: "in-person survey sheet", id: "1Hxyp-FWC3M___dVTR_wuZRI3L22MBWClj4ncPD-YUU4", idVar: "FEEDBACK_SHEET_ID", tabVar: "FEEDBACK_SHEET_TAB" },
+  qr: { label: "QR survey sheet", id: "1lLWOHwNMaPtjYHIwLXgkSj8YOpRZfF1Q8WZAq7--6Do", idVar: "FEEDBACK_QR_SHEET_ID", tabVar: "FEEDBACK_QR_SHEET_TAB" },
+};
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
@@ -47,7 +54,7 @@ async function accessToken(account: ServiceAccount) {
   return token.value;
 }
 
-async function google<T>(url: string, bearer: string, robot: string): Promise<T> {
+async function google<T>(url: string, bearer: string, robot: string, source: (typeof SOURCES)[FeedbackSource]): Promise<T> {
   const response = await fetch(url, { headers: { authorization: `Bearer ${bearer}` }, cache: "no-store" });
   const body = await response.json().catch(() => ({}));
   if (response.ok) return body as T;
@@ -55,8 +62,8 @@ async function google<T>(url: string, bearer: string, robot: string): Promise<T>
   if (/has not been used|is disabled|SERVICE_DISABLED/i.test(message) || body?.error?.status === "PERMISSION_DENIED" && /API/i.test(message)) {
     throw new Error("The Google Sheets API is switched off in the Google Cloud project. Go to Google Cloud → APIs & Services → Library → Google Sheets API → Enable, wait a minute, then click Refresh.");
   }
-  if (response.status === 403) throw new Error(`The robot account can't open the feedback sheet yet. In Google Sheets click Share, add ${robot} as a Viewer, then click Refresh.`);
-  if (response.status === 404) throw new Error("The feedback sheet wasn't found. Check FEEDBACK_SHEET_ID in Vercel (the long code in the sheet's link).");
+  if (response.status === 403) throw new Error(`The robot account can't open the ${source.label} yet. Open that Google Sheet, click Share, add ${robot} as a Viewer, then click Refresh.`);
+  if (response.status === 404) throw new Error(`The ${source.label} wasn't found. Check ${source.idVar} in Vercel (the long code in the sheet's link).`);
   throw new Error(`Google Sheets: ${message}`);
 }
 
@@ -72,31 +79,33 @@ function serialToText(serial: number) {
 }
 const looksLikeDate = (shown: string) => /\d\s*[/-]\s*\d|\d:\d\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i.test(shown);
 
-let cache: { at: number; body: FeedbackSheet } | null = null;
+const cache = new Map<FeedbackSource, { at: number; body: FeedbackSheet }>();
 
-/** The feedback sheet's response tab (RAW DATA, or the first tab) as a header row and text rows. */
-export async function readFeedbackSheet(fresh = false): Promise<FeedbackSheet> {
+/** A feedback sheet's response tab (RAW DATA, then Form Responses, then the first tab) as a header row and text rows. */
+export async function readFeedbackSheet(which: FeedbackSource, fresh = false): Promise<FeedbackSheet> {
+  const source = SOURCES[which];
   const fetchedAt = new Date().toISOString();
   const empty: FeedbackSheet = { status: "ok", title: "", tab: "", headers: [], rows: [], firstRow: 2, message: "", robot: "", fetchedAt };
   let account: ServiceAccount | null;
   try { account = serviceAccount(); } catch (e) { return { ...empty, status: "error", message: (e as Error).message }; }
   if (!account) return { ...empty, status: "not-configured", message: "The dashboard can't read the feedback sheet yet: GOOGLE_SERVICE_ACCOUNT_JSON isn't set in Vercel. See the README (Patient Feedback) for the steps, then redeploy." };
   // A short server cache so a busy morning doesn't use up Google's read limit.
-  if (!fresh && cache && Date.now() - cache.at < 60_000) return cache.body;
+  const kept = cache.get(which);
+  if (!fresh && kept && Date.now() - kept.at < 60_000) return kept.body;
   const robot = account.client_email;
   try {
     const bearer = await accessToken(account);
-    const id = encodeURIComponent(process.env.FEEDBACK_SHEET_ID?.trim() || DEFAULT_SHEET_ID);
-    const meta = await google<{ properties?: { title?: string }; sheets?: { properties: { title: string; index: number } }[] }>(`${SHEETS}/${id}?fields=properties.title,sheets.properties(title,index)`, bearer, robot);
+    const id = encodeURIComponent(process.env[source.idVar]?.trim() || source.id);
+    const meta = await google<{ properties?: { title?: string }; sheets?: { properties: { title: string; index: number } }[] }>(`${SHEETS}/${id}?fields=properties.title,sheets.properties(title,index)`, bearer, robot, source);
     const tabs = (meta.sheets || []).map((s) => s.properties).sort((a, b) => a.index - b.index);
-    const wanted = process.env.FEEDBACK_SHEET_TAB?.trim();
-    const tab = (wanted && tabs.find((t) => t.title.toLowerCase() === wanted.toLowerCase())) || tabs.find((t) => /raw\s*data/i.test(t.title)) || tabs[0];
-    if (!tab) throw new Error("The feedback sheet has no tabs.");
+    const wanted = process.env[source.tabVar]?.trim();
+    const tab = (wanted && tabs.find((t) => t.title.toLowerCase() === wanted.toLowerCase())) || tabs.find((t) => /raw\s*data/i.test(t.title)) || tabs.find((t) => /form\s*responses/i.test(t.title)) || tabs[0];
+    if (!tab) throw new Error(`The ${source.label} has no tabs.`);
     const range = encodeURIComponent(`'${tab.title.replace(/'/g, "''")}'`);
     // The shown text (what people see in the sheet) and the raw values (to recognise dates reliably).
     const [shown, raw] = await Promise.all([
-      google<{ values?: string[][] }>(`${SHEETS}/${id}/values/${range}?valueRenderOption=FORMATTED_VALUE&majorDimension=ROWS`, bearer, robot),
-      google<{ values?: unknown[][] }>(`${SHEETS}/${id}/values/${range}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&majorDimension=ROWS`, bearer, robot),
+      google<{ values?: string[][] }>(`${SHEETS}/${id}/values/${range}?valueRenderOption=FORMATTED_VALUE&majorDimension=ROWS`, bearer, robot, source),
+      google<{ values?: unknown[][] }>(`${SHEETS}/${id}/values/${range}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER&majorDimension=ROWS`, bearer, robot, source),
     ]);
     const grid = (shown.values || []).map((row, r) => row.map((cell, c) => {
       const value = raw.values?.[r]?.[c];
@@ -109,7 +118,7 @@ export async function readFeedbackSheet(fresh = false): Promise<FeedbackSheet> {
     const rows = headerAt >= 0 ? grid.slice(headerAt + 1) : [];
     while (rows.length && !rows.at(-1)!.some(Boolean)) rows.pop();
     const body: FeedbackSheet = { ...empty, title: meta.properties?.title || "", tab: tab.title, headers, rows, firstRow: headerAt + 2, robot };
-    cache = { at: Date.now(), body };
+    cache.set(which, { at: Date.now(), body });
     return body;
   } catch (e) {
     return { ...empty, status: "error", robot, message: (e as Error).message };

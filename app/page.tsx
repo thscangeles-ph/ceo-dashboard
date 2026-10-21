@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, MessageSquareHeart, Mic, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, MessageSquareHeart, Mic, QrCode, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -64,7 +64,7 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
-  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker" | "feedback" | "podcast">("summary");
+  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker" | "feedback" | "feedbackQr" | "podcast">("summary");
   // The sidebar can shrink to icons for more room; remembered on this device.
   const [sideCollapsed, setSideCollapsed] = useState(false);
   useEffect(() => { try { if (localStorage.getItem("thsc-sidebar") === "collapsed") setTimeout(() => setSideCollapsed(true), 0); } catch { /* storage blocked */ } }, []);
@@ -282,15 +282,17 @@ export default function Home() {
     ? { shared: true, load: () => loadPodcast(getCloud()!), save: (kind, id, item) => savePodcastItem(getCloud()!, kind, id, item), remove: (kind, id) => deletePodcastItem(getCloud()!, kind, id) }
     : localPodcastStore), [cloud]);
 
-  // Patient Feedback: read live from the feedback Google Sheet through the server, for signed-in staff only.
-  const loadFeedback = useCallback(async (fresh: boolean) => {
+  // Patient Feedback: read live from the in-person or QR survey Google Sheet through the server, for signed-in staff only.
+  const loadFeedback = useCallback(async (source: "inperson" | "qr", fresh: boolean) => {
     const session = (await getCloud()?.auth.getSession())?.data.session;
-    const response = await fetch(`/api/feedback${fresh ? "?fresh=1" : ""}`, { headers: { authorization: `Bearer ${session?.access_token || ""}` }, cache: "no-store" }).catch(() => null);
+    const response = await fetch(`/api/feedback?source=${source}${fresh ? "&fresh=1" : ""}`, { headers: { authorization: `Bearer ${session?.access_token || ""}` }, cache: "no-store" }).catch(() => null);
     if (!response) throw new Error("Can't reach the server. Check the internet connection and try again.");
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `The server returned HTTP ${response.status}.`);
     return body as FeedbackSheet;
   }, []);
+  const loadInPerson = useCallback((fresh: boolean) => loadFeedback("inperson", fresh), [loadFeedback]);
+  const loadQr = useCallback((fresh: boolean) => loadFeedback("qr", fresh), [loadFeedback]);
 
   const toggleRemember = (keep: boolean) => {
     setRemember(keep); setRememberState(keep);
@@ -508,7 +510,8 @@ export default function Home() {
     { key: "acquisition", label: "Patient Acquisition Cost", short: "Acquisition", icon: PhilippinePeso, show: role !== "concierge", empty: teamSales.length ? undefined : "no file" },
     { key: "crm", label: "CRM Dashboard", short: "CRM", icon: Users, show: true, empty: inquiries.length ? undefined : "no tracker" },
     { key: "tracker", label: "Inquiry Tracker", short: "Tracker", icon: ListChecks, show: canEdit, count: inquiries.length },
-    { key: "feedback", label: "Patient Feedback", short: "Feedback", icon: MessageSquareHeart, show: role !== "concierge" },
+    { key: "feedback", label: "In-Person Survey", short: "In-person", icon: MessageSquareHeart, show: role !== "concierge", group: "Patient Feedback" },
+    { key: "feedbackQr", label: "QR Survey", short: "QR survey", icon: QrCode, show: role !== "concierge" },
     { key: "podcast", label: "Podcast Tracker & Scheduler", short: "Podcast", icon: Mic, show: role !== "concierge", group: "Podcast" },
   ];
 
@@ -619,7 +622,14 @@ export default function Home() {
             onSave={saveInquiry} onAdd={() => openEditor()} onOpen={(row) => openEditor(row)} />
         )}
 
-        {!restoring && tab === "feedback" && role !== "concierge" && <FeedbackDashboard load={loadFeedback} />}
+        {!restoring && tab === "feedback" && role !== "concierge" && (
+          <FeedbackDashboard key="inperson" name="In-Person Survey" load={loadInPerson}
+            intro="The paper survey patients answer at the clinic, typed into the feedback form, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />
+        )}
+        {!restoring && tab === "feedbackQr" && role !== "concierge" && (
+          <FeedbackDashboard key="qr" name="QR Survey" load={loadQr}
+            intro="The survey patients answer themselves by scanning the QR code, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />
+        )}
 
         {!restoring && tab === "podcast" && role !== "concierge" && (
           <PodcastDashboard store={podcastStore} canEdit actor={auth.status === "signedIn" ? auth.email : ""} />

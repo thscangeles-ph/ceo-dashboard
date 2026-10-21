@@ -194,9 +194,9 @@ export async function podcastReport(o: { channel: Channel | null; videos: Video[
 }
 
 /** Patient Feedback: the survey results for the period and service chosen on the tab. */
-export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { findings: { label: string; text: string }[]; filters: string }) {
+export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { name: string; findings: { label: string; text: string }[]; filters: string }) {
   const t = a.totals;
-  const r = await createReport({ title: "Patient Feedback Report", period: a.period ? `Date of visit ${fbDay(a.period.from)} - ${fbDay(a.period.to)}` : "No responses in this period", filters: o.filters, landscape: true, confidential: true });
+  const r = await createReport({ title: `Patient Feedback: ${o.name}`, period: a.period ? `${survey.visit ? "Date of visit" : "Date answered"} ${fbDay(a.period.from)} - ${fbDay(a.period.to)}` : "No responses in this period", filters: o.filters, landscape: true, confidential: true });
   r.kpis([
     { label: "Responses", value: count(t.responses), note: a.previous ? `${count(a.previous.responses)} in the previous period` : undefined },
     { label: "Satisfied", value: pctText(t.csat, 1), note: "Very Satisfied or Satisfied", accent: true },
@@ -232,5 +232,5 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { fi
     r.heading("Comments & experiences", a.comments.length > 60 ? `The newest 60 of ${count(a.comments.length)}.` : undefined);
     r.table(["Date of visit", "Service", "Type", "Comment"], a.comments.slice(0, 60).map((c) => [fbDay(c.response.visit), c.service, c.kind, `${c.text}${c.low ? " (low rating)" : ""}`]), { fontSize: 7.5, widths: { 0: 24, 1: 40, 2: 32 } });
   }
-  r.save(`THSC Patient Feedback ${a.period ? `${a.period.from} to ${a.period.to}` : fileRange(new Date(), new Date())}.pdf`);
+  r.save(`THSC Patient Feedback ${o.name} ${a.period ? `${a.period.from} to ${a.period.to}` : fileRange(new Date(), new Date())}.pdf`);
 }

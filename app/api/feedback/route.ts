@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFeedbackSheet } from "@/lib/google-sheets";
 
 /**
- * Patient Feedback: the responses from the feedback Google Sheet, for signed-in Admin, ManCom, Doctors and
+ * Patient Feedback: the responses from the in-person or QR survey Google Sheet, for signed-in Admin, ManCom, Doctors and
  * Marketing accounts only. Patient feedback is private, so it is never cached by the browser or Vercel,
  * and it isn't available without accounts.
  */
@@ -24,6 +24,7 @@ export async function GET(request: Request) {
   if (error || !user.user) return reply(401, { error: "Your sign-in has expired. Sign out and sign in again." });
   const { data: me } = await sb.from("profiles").select("role").eq("id", user.user.id).maybeSingle();
   if (!ALLOWED.includes(me?.role)) return reply(403, { error: "Patient Feedback is for Admin, ManCom, Doctors and Marketing accounts." });
-  const fresh = new URL(request.url).searchParams.has("fresh");
-  return reply(200, await readFeedbackSheet(fresh));
+  const params = new URL(request.url).searchParams;
+  // ?source=qr is the QR survey; anything else the in-person survey.
+  return reply(200, await readFeedbackSheet(params.get("source") === "qr" ? "qr" : "inperson", params.has("fresh")));
 }
