@@ -72,7 +72,8 @@ const COMMENT = /comment|suggest|experience|describe|remarks|feedback|reason|why
 export function questionText(header: string) {
   let t = header.trim().replace(/(?<=[\]:?.])\s+\d+$/, "").trim();
   const grid = /^(.*?)\s*\[(.+)\]$/.exec(t);
-  if (grid) t = grid[1] ? `${grid[1].trim()}: ${grid[2].trim()}` : grid[2].trim();
+  // A numbered row ("LABORATORY [1. If you had …]") is already clear on its own; the grid's title is the service.
+  if (grid) t = grid[1] && !/^\d+\./.test(grid[2].trim()) ? `${grid[1].trim()}: ${grid[2].trim()}` : grid[2].trim();
   return t;
 }
 
@@ -404,7 +405,7 @@ export function shortNote(month: string, cur: ServiceResult | undefined, prev: S
   if (!cur || !cur.answers) return cur?.responses ? `${cur.responses} response${cur.responses === 1 ? "" : "s"}, all N/A.` : `No responses in ${name}.`;
   const count = (p: number) => cur.questions.reduce((n, q) => n + (q.counts[p] || 0), 0);
   const neutral = count(3), low = count(2) + count(1);
-  const tone = !neutral && !low ? `Highly positive: no Neutral or Dissatisfied ratings (${pctText(cur.verySatisfied)} Very Satisfied).`
+  const tone = !neutral && !low ? `${(cur.verySatisfied ?? 0) >= 0.5 ? "Highly positive" : "Positive"}: no Neutral or Dissatisfied ratings (${pctText(cur.verySatisfied)} Very Satisfied).`
     : low ? `${low} Dissatisfied rating${low === 1 ? "" : "s"}, on ${cur.questions.filter((q) => (q.counts[2] || 0) + (q.counts[1] || 0)).map((q) => q.column.text.match(/^\d+/)?.[0] ? `Q${q.column.text.match(/^\d+/)![0]}` : short(q)).slice(0, 3).join(", ")}; ${pctText(cur.csat)} satisfied.`
     : `Mostly positive (${pctText(cur.csat)} satisfied), ${neutral} Neutral rating${neutral === 1 ? "" : "s"}.`;
   let change = "";

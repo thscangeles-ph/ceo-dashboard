@@ -291,7 +291,8 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
                     const section = survey.sections.find((x) => x.name === name);
                     const questions = section?.ratings ?? [];
                     const points = pointsOf(questions[0]?.labels).filter((p) => p.p >= 2 || compare.hasVeryLow);
-                    const yMax = Math.max(1, ...compare.months.flatMap((m) => (m.cur.services.find((x) => x.section.name === name)?.questions ?? []).flatMap((q) => [...Object.values(q.counts), q.na])));
+                    // At least 0–5 on the vertical axis, so one or two answers never look like a full column.
+                    const yMax = Math.max(5, ...compare.months.flatMap((m) => (m.cur.services.find((x) => x.section.name === name)?.questions ?? []).flatMap((q) => [...Object.values(q.counts), q.na])));
                     return (
                       <Fragment key={name}>
                         <div className="fb-cmp-q">
@@ -503,7 +504,7 @@ function GroupedQuestions({ questions, points, yMax }: { questions: { column: { 
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 24 }} barCategoryGap="16%" barGap={1}>
           <CartesianGrid vertical={false} stroke="var(--line)" />
           <XAxis dataKey="label" interval={0} angle={-35} textAnchor="end" height={78} tick={{ ...axisTick, fontFamily: "var(--font-sans-stack)", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "var(--line)" }} />
-          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} domain={[0, yMax ?? "auto"]} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} domain={[0, yMax ?? "auto"]} ticks={yMax && yMax <= 10 ? Array.from({ length: yMax + 1 }, (_, i) => i) : undefined} />
           {/* The counts pop up when a column is clicked (or tapped). */}
           <Tooltip trigger="click" cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
           {points.map((p) => <Bar key={p.p} dataKey={`c${p.p}`} fill={POINT_COLOR[p.p]} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} cursor="pointer" />)}
