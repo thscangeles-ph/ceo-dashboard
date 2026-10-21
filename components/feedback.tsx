@@ -63,7 +63,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
     return () => { clearTimeout(first); clearInterval(poll); };
   }, [refresh, refreshTags]);
 
-  const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow) : null), [sheet]);
+  const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow, sheet.where) : null), [sheet]);
   const a = useMemo(() => (survey ? analyzeFeedback(survey, filters) : null), [survey, filters]);
   const findings = useMemo(() => (a ? feedbackFindings(a) : []), [a]);
   const months = useMemo(() => Array.from(new Set((survey?.responses || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort().reverse(), [survey]);
@@ -86,6 +86,9 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
   const dateName = survey && !survey.visit ? "Date answered" : "Date of visit";
   const unit = survey && !survey.visit ? "answer" : "visit";
   const rangeText = filters.from || filters.to ? `${filters.from ? dayText(filters.from) : `first ${unit}`} – ${filters.to ? dayText(filters.to) : `latest ${unit}`}` : unit === "visit" ? "all dates of visit" : "all dates answered";
+  // Several response tabs (one per service form) are read together; each tab is a service.
+  const tabCount = sheet?.where ? sheet.tab.split(", ").length : 1;
+  const tabsText = tabCount > 1 ? `${tabCount} response tabs (${sheet!.tab})` : `${sheet?.tab ?? ""} tab`;
   const t = a?.totals;
   const delta = a?.previous && a.previous.responses >= 5 && t?.csat != null && a.previous.csat !== null ? (t.csat - a.previous.csat) * 100 : null;
 
@@ -192,7 +195,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
               </select>
             </label>
           </div>
-          <p className="click-hint no-print"><Sheet size={15} aria-hidden />Every response in the sheet&apos;s {sheet!.tab} tab, by {dateName.toLowerCase()}; new responses appear within a few minutes. N/A answers are left out of the percentages.</p>
+          <p className="click-hint no-print"><Sheet size={15} aria-hidden />Every response in the sheet&apos;s {tabsText}, by {dateName.toLowerCase()}; new responses appear within a few minutes. N/A answers are left out of the percentages.</p>
 
           <div className="kpis">
             <div className="kpi"><div className="label">Responses</div><div className="value">{num(t.responses)}</div><div className="note">{a.previous ? `${num(a.previous.responses)} in the previous period` : `${num(survey.responses.length)} in the sheet${a.undated ? ` · ${a.undated} without a visit date` : ""}`}</div></div>
@@ -339,7 +342,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
                         <td className="name">{u.service || "—"}</td>
                         <td className="name">{u.low.map((l) => <div key={l.question}><span className="fb-tag">{l.answer}</span> {l.question}</div>)}</td>
                         <td className="name fb-said">{u.comments.length ? u.comments.join(" · ") : <span className="muted">No comment</span>}</td>
-                        <td className="num">{u.response.row}</td>
+                        <td className="num">{u.response.where ?? u.response.row}</td>
                       </tr>
                     )) : <tr><td colSpan={5} className="empty-note">No Dissatisfied ratings in this period.</td></tr>}
                   </tbody>
@@ -389,7 +392,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
           </section>
 
           <footer className="source">
-            Live from the Google Sheet &ldquo;{sheet!.title}&rdquo;, tab {sheet!.tab}, read every 2 minutes while this tab is open. Period = {survey.visit ? <>&ldquo;{survey.visit.header}&rdquo;</> : "the form's timestamp"}; service = {survey.router ? <>&ldquo;{survey.router.text}&rdquo;</> : "each block of questions"}; {survey.sections.reduce((n, s) => n + s.ratings.length, 0)} rating questions in {survey.sections.length} service blocks. Satisfied = Very Satisfied or Satisfied; N/A answers are not counted.
+            Live from the Google Sheet &ldquo;{sheet!.title}&rdquo; ({tabsText}), read every 2 minutes while this tab is open. Period = {survey.visit ? <>&ldquo;{survey.visit.header}&rdquo;</> : "the form's timestamp"}; service = {survey.router ? <>&ldquo;{survey.router.text}&rdquo;</> : "each block of questions"}; {survey.sections.reduce((n, s) => n + s.ratings.length, 0)} rating questions in {survey.sections.length} service blocks. Satisfied = Very Satisfied or Satisfied; N/A answers are not counted.
             {survey.hidden.length > 0 && <> Personal details ({survey.hidden.map((c) => c.text).join(", ")}) are never shown.</>}
           </footer>
         </>

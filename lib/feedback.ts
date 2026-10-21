@@ -18,6 +18,8 @@ export type FeedbackSheet = {
   rows: string[][];
   /** The sheet row number of rows[0] (the row under the headers). */
   firstRow: number;
+  /** When several tabs were combined: where each row is in the sheet ("Form Responses 2, row 14"). */
+  where?: string[];
   message: string;
   /** The service account's email, to share the sheet with. */
   robot: string;
@@ -36,7 +38,7 @@ export type Column = {
   max?: number;
   labels?: Record<number, string>;
 };
-export type Response = { row: number; visit: string | null; cells: string[] };
+export type Response = { row: number; visit: string | null; cells: string[]; where?: string };
 export type Section = { name: string; columns: Column[]; ratings: Column[]; texts: Column[]; recommend: Column[] };
 export type Survey = { columns: Column[]; responses: Response[]; visit: Column | null; router: Column | null; profile: Column[]; sections: Section[]; hidden: Column[] };
 
@@ -119,15 +121,15 @@ function scaleLabels(scale: Record<string, number>, seen: string[]) {
 }
 
 /** Reads the sheet into questions, services and responses. */
-export function buildSurvey(headers: string[], allRows: string[][], firstRow = 2): Survey {
-  const numbered = allRows.map((cells, i) => ({ cells, row: firstRow + i })).filter((r) => r.cells.some((c) => c.trim()));
+export function buildSurvey(headers: string[], allRows: string[][], firstRow = 2, where?: string[]): Survey {
+  const numbered = allRows.map((cells, i) => ({ cells, row: firstRow + i, where: where?.[i] })).filter((r) => r.cells.some((c) => c.trim()));
   const rows = numbered.map((r) => r.cells);
   const columns = classify(headers, rows);
   // Without a column named like a visit date, use another date column, then the form's timestamp.
   let visit = columns.find((c) => c.kind === "visit") ?? null;
   if (!visit) { visit = columns.find((c) => c.kind === "date" && /date|petsa/i.test(c.header)) ?? columns.find((c) => c.kind === "date") ?? null; if (visit) visit.kind = "visit"; }
   const when = visit ?? columns.find((c) => c.kind === "timestamp") ?? null;
-  const responses = numbered.map(({ cells, row }) => ({ row, visit: when ? (ISO_DAY.exec(cells[when.index] ?? "")?.slice(1, 4).join("-") ?? null) : null, cells }));
+  const responses = numbered.map(({ cells, row, where: at }) => ({ row, where: at, visit: when ? (ISO_DAY.exec(cells[when.index] ?? "")?.slice(1, 4).join("-") ?? null) : null, cells }));
 
   // Each service's block starts at a rating question that follows a non-rating column and runs until the next block.
   const firstRating = columns.findIndex((c) => c.kind === "rating");
@@ -412,4 +414,48 @@ export function shortNote(month: string, cur: ServiceResult | undefined, prev: S
     change = Math.abs(d) < 3 ? ` About the same as ${pName}.` : d > 0 ? ` Better than ${pName}: Very Satisfied rose from ${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)}.` : ` Compared with ${pName}, more ratings shifted from Very Satisfied to Satisfied (${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)}).`;
   } else if (prevMonth) change = ` No ${monthText(prevMonth, true).split(" ")[0]} responses to compare with.`;
   return `${tone}${change}${cur.responses < 3 ? " Few responses: read with caution." : ""}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// A sheet with several response tabs (e.g. one Google Form per service, each with its own tab).
+
+export type SheetTab = { title: string; headers: string[]; rows: string[][]; firstRow: number };
+/**
+ * Puts several response tabs into one table the dashboard reads like a single form: the date of visit (or
+ * the timestamp), the service (the tab's own service question, or else the tab's name), the questions every
+ * tab asks about the patient (gender, age …) as shared columns, then each tab's own questions as its block.
+ */
+export function combineTabs(tabs: SheetTab[]) {
+  const key = (h: string) => questionText(h).toLowerCase().replace(/\s+/g, " ").trim();
+  const plans = tabs.map((tab) => {
+    const cols = classify(tab.headers, tab.rows.filter((r) => r.some((c) => c.trim())));
+    const when = cols.find((c) => c.kind === "visit") ?? cols.find((c) => c.kind === "date" && /date|petsa/i.test(c.header)) ?? cols.find((c) => c.kind === "date") ?? cols.find((c) => c.kind === "timestamp") ?? null;
+    const firstRating = cols.findIndex((c) => c.kind === "rating");
+    const head = cols.slice(0, firstRating < 0 ? cols.length : firstRating);
+    const router = head.find((c) => (c.kind === "choice" || c.kind === "multi") && /servic|procedure|avail|department/i.test(c.header)) ?? null;
+    const shared = head.filter((c) => c !== router && (c.kind === "choice" || c.kind === "multi" || c.kind === "yesno"));
+    return { tab, cols, when, router, shared };
+  });
+  const headers = [plans.some((p) => p.when?.kind === "visit") ? "Date of Visit" : "Timestamp", "Service availed"];
+  const sharedAt = new Map<string, number>();
+  plans.forEach((p) => p.shared.forEach((c) => { if (!sharedAt.has(key(c.header))) { sharedAt.set(key(c.header), headers.length); headers.push(c.header); } }));
+  const placed = plans.map((p) => {
+    const to = new Map<number, number>();
+    p.cols.forEach((c) => {
+      if (c === p.when || c === p.router || c.kind === "timestamp" || c.kind === "date" || c.kind === "visit") return;
+      if (p.shared.includes(c)) { to.set(c.index, sharedAt.get(key(c.header))!); return; }
+      to.set(c.index, headers.length); headers.push(c.header);
+    });
+    return to;
+  });
+  const rows: string[][] = [], where: string[] = [];
+  plans.forEach((p, i) => p.tab.rows.forEach((cells, r) => {
+    if (!cells.some((c) => c.trim())) return;
+    const out = new Array<string>(headers.length).fill("");
+    out[0] = p.when ? cells[p.when.index] ?? "" : "";
+    out[1] = (p.router ? (cells[p.router.index] ?? "").trim() : "") || p.tab.title;
+    placed[i].forEach((target, from) => { out[target] = cells[from] ?? ""; });
+    rows.push(out); where.push(`${p.tab.title}, row ${p.tab.firstRow + r}`);
+  }));
+  return { headers, rows, where };
 }
