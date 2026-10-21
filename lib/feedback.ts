@@ -395,3 +395,21 @@ export function monthNote(month: string, cur: ServiceResult | undefined, prev: S
   if (cur.responses < 3) parts.push(`Only ${cur.responses} response${cur.responses === 1 ? "" : "s"}, so read this with caution.`);
   return parts.join(" ");
 }
+
+/** The short analysis under one month's chart: how the month went, and the change from the month before. */
+export function shortNote(month: string, cur: ServiceResult | undefined, prev: ServiceResult | undefined, prevMonth: string | null) {
+  const name = monthText(month, true).split(" ")[0];
+  if (!cur || !cur.answers) return cur?.responses ? `${cur.responses} response${cur.responses === 1 ? "" : "s"}, all N/A.` : `No responses in ${name}.`;
+  const count = (p: number) => cur.questions.reduce((n, q) => n + (q.counts[p] || 0), 0);
+  const neutral = count(3), low = count(2) + count(1);
+  const tone = !neutral && !low ? `Highly positive: no Neutral or Dissatisfied ratings (${pctText(cur.verySatisfied)} Very Satisfied).`
+    : low ? `${low} Dissatisfied rating${low === 1 ? "" : "s"}, on ${cur.questions.filter((q) => (q.counts[2] || 0) + (q.counts[1] || 0)).map((q) => q.column.text.match(/^\d+/)?.[0] ? `Q${q.column.text.match(/^\d+/)![0]}` : short(q)).slice(0, 3).join(", ")}; ${pctText(cur.csat)} satisfied.`
+    : `Mostly positive (${pctText(cur.csat)} satisfied), ${neutral} Neutral rating${neutral === 1 ? "" : "s"}.`;
+  let change = "";
+  if (prev && prev.answers && prevMonth) {
+    const pName = monthText(prevMonth, true).split(" ")[0];
+    const d = ((cur.verySatisfied ?? 0) - (prev.verySatisfied ?? 0)) * 100;
+    change = Math.abs(d) < 3 ? ` About the same as ${pName}.` : d > 0 ? ` Better than ${pName}: Very Satisfied rose from ${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)}.` : ` Compared with ${pName}, more ratings shifted from Very Satisfied to Satisfied (${pctText(prev.verySatisfied)} to ${pctText(cur.verySatisfied)}).`;
+  } else if (prevMonth) change = ` No ${monthText(prevMonth, true).split(" ")[0]} responses to compare with.`;
+  return `${tone}${change}${cur.responses < 3 ? " Few responses: read with caution." : ""}`;
+}

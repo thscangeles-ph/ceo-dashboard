@@ -676,24 +676,6 @@ table.fb-follow { min-width: 820px; }
 .fb-tip b { margin-left: auto; padding-left: 12px; font-family: var(--font-mono-stack); font-weight: 600; white-space: nowrap; }
 
 /* Patient Feedback: monthly results by service (like the CHARTS & TABLE tab) */
-.fb-month-chips { margin: 0 0 14px; }
-.fb-month-banner { background: #fff2cc; border: 1px solid #f1d27a; padding: 10px 16px; font-weight: 700; font-size: 1.15rem; letter-spacing: .01em; margin-bottom: 12px; }
-.fb-svc { padding: 16px 18px; }
-.fb-svc + .fb-svc { margin-top: 16px; }
-.fb-svc-title { font-size: .95rem !important; font-weight: 800 !important; letter-spacing: .02em; margin: 0 0 10px !important; }
-/* The counts table across the top, then the chart and the interpretation side by side. */
-.fb-svc-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px 16px; align-items: start; }
-.fb-svc-grid > .table-scroll { grid-column: 1 / -1; }
-@media (max-width: 760px) { .fb-svc-grid { grid-template-columns: 1fr; } }
-table.fb-counts td, table.fb-counts th { padding: 6px 7px; }
-.fb-counts td.name { font-size: .82rem; line-height: 1.3; min-width: 240px; }
-.fb-counts td.num, .fb-counts th.num { width: 92px; }
-.fb-counts th.num { white-space: normal; min-width: 48px; vertical-align: bottom; font-size: .66rem; }
-.fb-svc-chart { border: 1px solid var(--line); padding: 8px 8px 0; min-width: 0; }
-.fb-chart-title { font-size: .7rem; color: var(--ink-soft); letter-spacing: .04em; margin: 2px 4px 4px; }
-.fb-interp { background: #fff2cc; border: 1px solid #f1d27a; padding: 10px 12px; font-size: .84rem; line-height: 1.5; }
-.fb-interp strong { display: block; font-size: .74rem; letter-spacing: .04em; margin-bottom: 4px; }
-.fb-interp p { margin: 0; }
 /* Patient Feedback: comments board (like the COMMENTS tab) */
 .fb-legend-board { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
 .fb-legend-board span { font-size: .72rem; font-weight: 700; letter-spacing: .06em; margin-right: 4px; }
@@ -709,3 +691,25 @@ table.fb-counts td, table.fb-counts th { padding: 6px 7px; }
 @media (max-width: 600px) { .fb-board { grid-auto-flow: row; grid-auto-columns: auto; } }
 @media print { .fb-board { grid-auto-flow: row; } .fb-card-meta select { display: none; } }
 .fb-follow .fb-tag { margin-left: 0; }
+
+/* Patient Feedback: months side by side (questions | month chart | month chart …), like the CHARTS & TABLE tab */
+.fb-compare-pick { align-items: flex-end; margin-bottom: 12px; }
+.fb-compare-pick .fb-legend { margin: 0 0 10px auto; }
+.fb-cmp { display: grid; border-top: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--panel); }
+.fb-cmp > div { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.fb-cmp-corner, .fb-cmp-banner { background: #fff2cc; font-weight: 800; padding: 12px 14px; display: flex; align-items: center; }
+.fb-cmp-corner { justify-content: center; text-align: center; font-size: .95rem; }
+.fb-cmp-banner { font-size: 1.1rem; letter-spacing: .01em; }
+.fb-cmp-q { padding: 14px 14px 12px; }
+.fb-cmp-q h3 { font-size: .95rem; font-weight: 800; letter-spacing: .02em; margin: 0 0 8px; }
+.fb-cmp-q ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.fb-cmp-q li { font-size: .78rem; line-height: 1.35; color: #1a4fa0; }
+.fb-cmp-cell { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.fb-cmp-cell .fb-chart-title { margin: 0 2px; }
+.fb-cmp-empty { display: grid; place-items: center; height: 300px; color: var(--ink-soft); font-size: .85rem; border: 1px dashed var(--line); }
+.fb-cmp-cell .fb-interp { font-size: .8rem; }
+.fb-chart-title { font-size: .7rem; color: var(--ink-soft); letter-spacing: .04em; }
+.fb-interp { background: #fff2cc; border: 1px solid #f1d27a; padding: 10px 12px; font-size: .84rem; line-height: 1.5; }
+.fb-interp strong { display: block; font-size: .72rem; letter-spacing: .04em; margin-bottom: 4px; }
+.fb-interp p { margin: 0; }
+.fb-cmp .recharts-wrapper:focus, .fb-cmp .recharts-surface:focus, .fb-cmp svg:focus { outline: none; }

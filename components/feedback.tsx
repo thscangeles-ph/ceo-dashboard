@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Eye, Info, RefreshCw, Search, Sheet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
 import type { CommentType } from "@/lib/feedback";
-import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthNote, monthText, pctText } from "@/lib/feedback";
+import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, feedbackFindings, guessCommentType, monthText, pctText, shortNote } from "@/lib/feedback";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
 const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
@@ -37,8 +37,8 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
   const [preset, setPreset] = useState("all");
   const [filters, setFilters] = useState<Filters>({ from: "", to: "", service: "" });
   const [query, setQuery] = useState("");
-  const [month, setMonthState] = useState<string | null>(null);
-  const setMonth = (m: string) => setMonthState(m);
+  const [monthFrom, setMonthFrom] = useState<string | null>(null);
+  const [monthTo, setMonthTo] = useState<string | null>(null);
   const [tags, setTags] = useState<Record<string, CommentType>>({});
   const [tagNote, setTagNote] = useState("");
   const [savingKey, setSavingKey] = useState("");
@@ -91,17 +91,25 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
 
   // Monthly results: the months in the chosen period, the latest first chosen; each compared with the month before.
   const monthKeys = useMemo(() => Array.from(new Set((a?.rows || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort(), [a]);
-  const shownMonth = month && monthKeys.includes(month) ? month : monthKeys.at(-1) ?? null;
-  const monthly = useMemo(() => {
-    if (!survey || !shownMonth) return null;
+  // Months side by side (the last two by default), each with the month before it for the comparison.
+  const compare = useMemo(() => {
+    if (!survey || !monthKeys.length) return null;
+    const to = monthTo && monthKeys.includes(monthTo) ? monthTo : monthKeys.at(-1)!;
+    let from = monthFrom && monthKeys.includes(monthFrom) ? monthFrom : monthKeys[Math.max(0, monthKeys.indexOf(to) - 1)];
+    if (from > to) from = to;
     const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: day(new Date(y, m, 0).getTime()) }; };
-    const [y, m] = shownMonth.split("-").map(Number);
-    const prevKey = day(new Date(y, m - 2, 1).getTime()).slice(0, 7);
-    const cur = analyzeFeedback(survey, { ...range(shownMonth), service: filters.service });
-    const prev = analyzeFeedback(survey, { ...range(prevKey), service: filters.service });
-    const hasVeryLow = cur.services.some((x) => x.questions.some((q) => q.counts[1]));
-    return { cur, prev: prev.totals.responses ? prev : null, prevKey: prev.totals.responses ? prevKey : null, hasVeryLow };
-  }, [survey, shownMonth, filters.service]);
+    const before = (key: string) => { const [y, m] = key.split("-").map(Number); return day(new Date(y, m - 2, 1).getTime()).slice(0, 7); };
+    const months = monthKeys.filter((k) => k >= from && k <= to).map((key) => {
+      const cur = analyzeFeedback(survey, { ...range(key), service: filters.service });
+      const prev = analyzeFeedback(survey, { ...range(before(key)), service: filters.service });
+      return { key, cur, prev: prev.totals.responses ? prev : null, prevKey: prev.totals.responses ? before(key) : null };
+    });
+    const totals = new Map<string, number>();
+    months.forEach((m) => m.cur.services.forEach((x) => totals.set(x.section.name, (totals.get(x.section.name) || 0) + x.responses)));
+    const services = Array.from(totals).sort((x, y) => y[1] - x[1]).map(([name]) => name);
+    const hasVeryLow = months.some((m) => m.cur.services.some((x) => x.questions.some((q) => q.counts[1])));
+    return { from, to, months, services, hasVeryLow };
+  }, [survey, monthKeys, monthFrom, monthTo, filters.service]);
 
   // The comments board: one column per month, each comment with the team's type or the first guess.
   const board = useMemo(() => {
@@ -257,49 +265,47 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
             </div>
           </section>
 
-          {monthKeys.length > 0 && (
+          {compare && (
             <section>
               <h2>Monthly results by service</h2>
-              <p className="section-note">Like the CHARTS &amp; TABLE tab: for each month, every service&apos;s answer counts per question, the chart, and an interpretation compared with the month before. Choose a month:</p>
-              <div className="chips no-print fb-month-chips" role="group" aria-label="Month">
-                {monthKeys.map((m) => <button key={m} type="button" className={`chip-btn${m === shownMonth ? " on" : ""}`} aria-pressed={m === shownMonth} onClick={() => setMonth(m)}>{monthText(m, true)}</button>)}
+              <p className="section-note">Like the CHARTS &amp; TABLE tab: the questions on the left, then each month&apos;s chart with a short analysis under it, compared with the month before. Click a column to see how many patients gave each answer.</p>
+              <div className="filterbar no-print fb-compare-pick">
+                <label>From month<select value={compare.from} onChange={(e) => { setMonthFrom(e.target.value); if (e.target.value > compare.to) setMonthTo(e.target.value); }}>{monthKeys.map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}</select></label>
+                <label>To month<select value={compare.to} onChange={(e) => { setMonthTo(e.target.value); if (e.target.value < compare.from) setMonthFrom(e.target.value); }}>{monthKeys.map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}</select></label>
+                <AnswerLegend points={pointsOf(survey.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels).filter((p) => p.p >= 2 || compare.hasVeryLow)} na />
               </div>
-              {monthly && (
-                <>
-                  <div className="fb-month-banner">{monthText(shownMonth!, true).split(" ")[0].toUpperCase()} {monthText(shownMonth!, true).split(" ")[1]} = {num(monthly.cur.totals.responses)} TOTAL RESPONSE{monthly.cur.totals.responses === 1 ? "" : "S"}</div>
-                  <AnswerLegend points={[...pointsOf(monthly.cur.services[0]?.questions[0]?.column.labels).filter((p) => p.p >= 2 || monthly.hasVeryLow)]} na />
-                  {monthly.cur.services.map((x) => {
-                    const points = pointsOf(x.questions[0]?.column.labels).filter((p) => p.p >= 2 || monthly.hasVeryLow);
+              <div className="fb-scroll">
+                <div className="fb-cmp" style={{ gridTemplateColumns: `minmax(220px, 300px) repeat(${compare.months.length}, minmax(330px, 1fr))`, minWidth: 240 + compare.months.length * 340 }}>
+                  <div className="fb-cmp-corner">THSC PATIENT&apos;S FEEDBACKS</div>
+                  {compare.months.map((m) => <div key={m.key} className="fb-cmp-banner">{monthText(m.key, true).split(" ")[0].toUpperCase()} = {num(m.cur.totals.responses)} TOTAL RESPONSE{m.cur.totals.responses === 1 ? "" : "S"}</div>)}
+                  {compare.services.map((name) => {
+                    const section = survey.sections.find((x) => x.name === name);
+                    const questions = section?.ratings ?? [];
+                    const points = pointsOf(questions[0]?.labels).filter((p) => p.p >= 2 || compare.hasVeryLow);
+                    const yMax = Math.max(1, ...compare.months.flatMap((m) => (m.cur.services.find((x) => x.section.name === name)?.questions ?? []).flatMap((q) => [...Object.values(q.counts), q.na])));
                     return (
-                      <div key={x.section.name} className="panel fb-svc">
-                        <h3 className="fb-svc-title">{x.section.name.toUpperCase()} - {num(x.responses)}</h3>
-                        <div className="fb-svc-grid">
-                          <div className="table-scroll">
-                            <table className="fb-counts">
-                              <thead><tr><th>Question</th>{points.map((p) => <th key={p.p} className="num">{p.label}</th>)}<th className="num">N/A</th></tr></thead>
-                              <tbody>
-                                {x.questions.map((q) => (
-                                  <tr key={q.column.index}>
-                                    <td className="name">{q.column.text}</td>
-                                    {points.map((p) => <td key={p.p} className={`num${p.p <= 2 && q.counts[p.p] ? " fb-bad" : ""}`}>{q.counts[p.p] || 0}</td>)}
-                                    <td className="num muted">{q.na}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          <div className="fb-svc-chart">
-                            <div className="fb-chart-title">{x.section.name.toUpperCase()} · {num(x.responses)} RESPONSE{x.responses === 1 ? "" : "S"} ({monthText(shownMonth!, true).split(" ")[0].toUpperCase()})</div>
-                            <GroupedQuestions questions={x.questions} points={points} />
-                          </div>
-                          <div className="fb-interp"><strong>INTERPRETATION &amp; ANALYSIS:</strong><p>{monthNote(shownMonth!, x, monthly.prev?.services.find((p) => p.section.name === x.section.name), monthly.prevKey)}</p></div>
+                      <Fragment key={name}>
+                        <div className="fb-cmp-q">
+                          <h3>{name.toUpperCase()}</h3>
+                          <ol>{questions.map((q) => <li key={q.index}>{q.text}</li>)}</ol>
                         </div>
-                      </div>
+                        {compare.months.map((m) => {
+                          const svc = m.cur.services.find((x) => x.section.name === name);
+                          const label = monthText(m.key, true).split(" ")[0].toUpperCase();
+                          return (
+                            <div key={m.key} className="fb-cmp-cell">
+                              <div className="fb-chart-title">{name.toUpperCase()} - {num(svc?.responses ?? 0)} RESPONSE{svc?.responses === 1 ? "" : "S"} ({label})</div>
+                              {svc ? <GroupedQuestions points={points} yMax={yMax} questions={questions.map((c) => svc.questions.find((q) => q.column.index === c.index) ?? { column: c, counts: {}, na: 0 })} />
+                                : <div className="fb-cmp-empty">No responses for this service in {monthText(m.key, true).split(" ")[0]}.</div>}
+                              <div className="fb-interp"><strong>ANALYSIS:</strong><p>{shortNote(m.key, svc, m.prev?.services.find((p) => p.section.name === name), m.prevKey)}</p></div>
+                            </div>
+                          );
+                        })}
+                      </Fragment>
                     );
                   })}
-                  {!monthly.cur.services.length && <div className="panel"><p className="empty-note">No ratings in this month.</p></div>}
-                </>
-              )}
+                </div>
+              </div>
             </section>
           )}
 
@@ -437,7 +443,7 @@ function AnswerTip({ active, payload, points, title, unit }: { active?: boolean;
   return (
     <div className="fb-tip">
       <strong>{title(row)}</strong>
-      {counts.map((c) => <div key={c.p}><i style={{ background: POINT_COLOR[c.p] }} />{c.label}<b>{c.n} {unit} · {sum ? Math.round((c.n / sum) * 100) : 0}%</b></div>)}
+      {counts.map((c) => <div key={c.p}><i style={{ background: POINT_COLOR[c.p] }} />{c.label}<b>{c.n} {c.n === 1 ? unit.replace(/s$/, "") : unit} · {sum ? Math.round((c.n / sum) * 100) : 0}%</b></div>)}
       {Number(row.na) > 0 && <div className="muted">N/A<b>{String(row.na)}</b></div>}
     </div>
   );
@@ -471,7 +477,7 @@ function ServiceColumns({ rows, points, selected, onSelect }: { rows: { name: st
 
 const NA_COLOR = "#7f7f7f";
 /** One service's questions in one month as grouped columns (one per answer), like the charts in the CHARTS & TABLE tab. */
-function GroupedQuestions({ questions, points }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[] }) {
+function GroupedQuestions({ questions, points, yMax }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[]; yMax?: number }) {
   const data = questions.map((q) => ({ label: q.column.text.length > 16 ? `${q.column.text.slice(0, 15)}…` : q.column.text, text: q.column.text, na: q.na, NA: q.na, ...Object.fromEntries(points.map((p) => [`c${p.p}`, q.counts[p.p] || 0])) }));
   return (
     <div className="chart-box" style={{ height: 300 }}>
@@ -479,10 +485,11 @@ function GroupedQuestions({ questions, points }: { questions: { column: { text: 
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 24 }} barCategoryGap="16%" barGap={1}>
           <CartesianGrid vertical={false} stroke="var(--line)" />
           <XAxis dataKey="label" interval={0} angle={-35} textAnchor="end" height={78} tick={{ ...axisTick, fontFamily: "var(--font-sans-stack)", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "var(--line)" }} />
-          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
-          <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
-          {points.map((p) => <Bar key={p.p} dataKey={`c${p.p}`} fill={POINT_COLOR[p.p]} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} />)}
-          <Bar dataKey="NA" fill={NA_COLOR} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} domain={[0, yMax ?? "auto"]} />
+          {/* The counts pop up when a column is clicked (or tapped). */}
+          <Tooltip trigger="click" cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
+          {points.map((p) => <Bar key={p.p} dataKey={`c${p.p}`} fill={POINT_COLOR[p.p]} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} cursor="pointer" />)}
+          <Bar dataKey="NA" fill={NA_COLOR} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} cursor="pointer" />
         </BarChart>
       </ResponsiveContainer>
     </div>
