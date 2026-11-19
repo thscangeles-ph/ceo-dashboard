@@ -31,11 +31,31 @@ export const configProblem = !URL || !KEY ? "" : isSecretKey(KEY)
     ? `Setup problem: NEXT_PUBLIC_SUPABASE_URL in Vercel should look like https://abcdefgh.supabase.co (it is "${URL}"). Fix it and redeploy.`
     : "";
 
+/**
+ * The browser talks to Supabase through this app's own address (/sb/…, a rewrite in next.config.ts), so it
+ * works on networks that block *.supabase.co. The sign-in is still saved under the project's usual name,
+ * so nobody has to sign in again.
+ */
+const PROXY = "/sb";
 let client: SupabaseClient | null = null;
 export function getCloud() {
   if (!URL || !KEY || configProblem || typeof window === "undefined") return null;
-  client ??= createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  const storageKey = `sb-${new globalThis.URL(URL).hostname.split(".")[0]}-auth-token`;
+  client ??= createClient(`${window.location.origin}${PROXY}`, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey } });
   return client;
+}
+
+/**
+ * Live updates use a WebSocket, which can't go through the rewrite, so they connect to Supabase directly
+ * with the signed-in person's token. Where a network blocks that, the channel fails and the app re-reads
+ * the data every 30 seconds instead (see the Inquiry Tracker's live updates in app/page.tsx).
+ */
+let realtime: SupabaseClient | null = null;
+export function getRealtime() {
+  const sb = getCloud();
+  if (!sb) return null;
+  realtime ??= createClient(URL!, KEY!, { accessToken: async () => (await sb.auth.getSession()).data.session?.access_token ?? null });
+  return realtime;
 }
 export const cloudConfigured = Boolean(URL && KEY);
 

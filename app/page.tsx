@@ -9,7 +9,7 @@ import { clearWorkspace, getRemember, loadWorkspace, saveWorkspace, setRemember,
 import type { Session } from "@supabase/supabase-js";
 import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
-import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, loadCloud, loadFeedbackTags, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, saveFeedbackTag, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
+import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, getRealtime, loadCloud, loadFeedbackTags, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, saveFeedbackTag, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
 import { PodcastDashboard } from "@/components/podcast";
 import { FeedbackDashboard } from "@/components/feedback";
 import type { CommentType, FeedbackSheet } from "@/lib/feedback";
@@ -190,7 +190,9 @@ export default function Home() {
       }, 30_000);
     };
     if (myRole === "marketing") { startPolling(); return () => { live = false; clearInterval(poll); }; }
-    const channel = sb.channel("inquiries-live")
+    // Live updates connect to Supabase directly; on a network that blocks it the channel fails and polling takes over.
+    const rt = getRealtime()!;
+    const channel = rt.channel("inquiries-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "inquiries" }, (payload) => {
         const row = payload.new as { key?: string; data?: unknown } | null;
         if (payload.eventType === "DELETE") { const key = (payload.old as { key?: string })?.key; if (key) pending.set(key, null); }
@@ -199,7 +201,7 @@ export default function Home() {
         clearTimeout(flushTimer); flushTimer = setTimeout(flush, 400);
       })
       .subscribe((status) => { if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") startPolling(); });
-    return () => { live = false; clearTimeout(flushTimer); clearInterval(poll); void sb.removeChannel(channel); };
+    return () => { live = false; clearTimeout(flushTimer); clearInterval(poll); void rt.removeChannel(channel); };
   }, [cloudKey]);
 
   const signOut = async () => {
