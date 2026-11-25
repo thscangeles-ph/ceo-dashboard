@@ -207,7 +207,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
             <div className="kpi"><div className="label">Responses</div><div className="value">{num(t.responses)}</div><div className="note">{a.previous ? `${num(a.previous.responses)} in the previous period` : `${num(survey.responses.length)} in the sheet${a.undated ? ` · ${a.undated} without a visit date` : ""}`}</div></div>
             <div className="kpi accent"><div className="label">Satisfied</div><div className="value">{pctText(t.csat, 1)}</div><div className="note">{delta !== null ? `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} pts vs previous period` : "Very Satisfied or Satisfied ratings"}</div></div>
             <div className="kpi"><div className="label">Very satisfied</div><div className="value">{pctText(t.verySatisfied, 1)}</div><div className="note">Average {t.average === null ? "—" : t.average.toFixed(2)} of 5</div></div>
-            <div className="kpi"><div className="label">Would recommend</div><div className="value">{pctText(t.recommend, 1)}</div><div className="note">{t.recAnswers ? `${t.rec.Yes} yes · ${t.rec.Maybe} maybe · ${t.rec.No} no` : "No answers yet"}</div></div>
+            <div className="kpi"><div className="label">Recommendation rate</div><div className="value">{pctText(t.recommend, 1)}</div><div className="note">{t.recAnswers ? `${t.rec.Yes} yes · ${t.rec.Maybe} maybe · ${t.rec.No} no` : "No answers yet"}</div></div>
             <div className="kpi"><div className="label">Needs improvement</div><div className="value">{num(improvementCount)}</div><div className="note">{improvementCount ? `Suggestions for ${improvements.length} department${improvements.length === 1 ? "" : "s"}, ${improvements[0].department} first` : "Nothing stands out"}</div></div>
           </div>
 
@@ -241,7 +241,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
                   </div>
                 </div>
                 <div className="panel">
-                  <h3>Satisfied and would recommend (%)</h3>
+                  <h3>Satisfied and recommendation rate (%)</h3>
                   <div className="chart-box">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={a.trend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
@@ -251,7 +251,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
                         <Tooltip contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(v, name) => [v === null ? "—" : `${Number(v).toFixed(1)}%`, name]} labelFormatter={(l) => (a.byMonth ? l : `Week of ${l}`)} />
                         <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: "var(--ink-soft)" }} />
                         <Line type="monotone" dataKey="satisfied" name="Satisfied" stroke="var(--s1)" strokeWidth={2} dot={{ r: 3, fill: "var(--s1)", stroke: "var(--panel)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
-                        <Line type="monotone" dataKey="recommend" name="Would recommend" stroke="var(--s2)" strokeWidth={2} dot={{ r: 3, fill: "var(--s2)", stroke: "var(--panel)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
+                        <Line type="monotone" dataKey="recommend" name="Recommendation rate" stroke="var(--s2)" strokeWidth={2} dot={{ r: 3, fill: "var(--s2)", stroke: "var(--panel)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -545,7 +545,7 @@ const pointsFor = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) =
 const shortMonth = (key: string) => monthText(key, true).split(" ")[0];
 
 /** A figure for this month next to last month's, with the change: up is better for every figure here. */
-function CompareCard({ label, cur, prev, percent, prevLabel, accent, neutral }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string; accent?: boolean; neutral?: boolean }) {
+function CompareCard({ label, cur, prev, percent, prevLabel, accent }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string; accent?: boolean }) {
   const show = (v: number | null) => (v === null ? "—" : percent ? pctText(v, 1) : num(v));
   const change = cur !== null && prev !== null ? (percent ? (cur - prev) * 100 : cur - prev) : null;
   const tone = change === null || Math.abs(change) < (percent ? 0.05 : 0.5) ? "same" : change > 0 ? "up" : "down";
@@ -553,7 +553,7 @@ function CompareCard({ label, cur, prev, percent, prevLabel, accent, neutral }: 
     <div className={`kpi fb-cmp-kpi${accent ? " accent" : ""}`}>
       <div className="label">{label}</div>
       <div className="value">{show(cur)}</div>
-      <div className={`fb-change ${neutral ? "same" : tone}`}>
+      <div className={`fb-change ${tone}`}>
         {change === null ? "No earlier month to compare" : tone === "same" ? "Same as " : `${tone === "up" ? "▲" : "▼"} ${percent ? `${Math.abs(change).toFixed(1)} pts` : num(Math.abs(change))} vs `}
         {change !== null && <>{prevLabel} ({show(prev)})</>}
       </div>
@@ -600,7 +600,11 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
     const cur = analyzeFeedback(survey, range(current)), prev = analyzeFeedback(survey, range(prevKey));
     const typeOf = (c: FeedbackSummary["comments"][number]) => tags[commentKey(source.id, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience");
     const improvements = suggestImprovements(survey, cur, typeOf).flatMap((d) => d.items).sort((a2, b2) => b2.score - a2.score).slice(0, 3);
-    return { cur, prev: prev.totals.responses ? prev : null, prevKey, improvements };
+    // Every comment of both months with its type (the team's choice on the comments board, else the guess), by type then date.
+    const order = Object.fromEntries(COMMENT_TYPES.map((ct, i) => [ct.id, i]));
+    const typed = (list: FeedbackSummary["comments"]) => list.map((c) => ({ ...c, type: typeOf(c) }))
+      .sort((x, y2) => order[x.type] - order[y2.type] || (x.response.visit ?? "").localeCompare(y2.response.visit ?? ""));
+    return { cur, prev: prev.totals.responses ? prev : null, prevKey, improvements, curComments: typed(cur.comments), prevComments: typed(prev.comments) };
   }, [survey, current, tags, source.id]);
 
   const labels = survey?.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels;
@@ -652,8 +656,8 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
             <CompareCard label="Responses" cur={cur.totals.responses} prev={prev?.totals.responses ?? null} prevLabel={prevName} />
             <CompareCard label="Satisfied" cur={cur.totals.csat} prev={prev?.totals.csat ?? null} prevLabel={prevName} percent accent />
             <CompareCard label="Very satisfied" cur={cur.totals.verySatisfied} prev={prev?.totals.verySatisfied ?? null} prevLabel={prevName} percent />
-            <CompareCard label="Would recommend" cur={cur.totals.recommend} prev={prev?.totals.recommend ?? null} prevLabel={prevName} percent />
-            <CompareCard label="Comments" cur={cur.comments.length} prev={prev?.comments.length ?? null} prevLabel={prevName} neutral />
+            <CompareCard label="Recommendation rate" cur={cur.totals.recommend} prev={prev?.totals.recommend ?? null} prevLabel={prevName} percent />
+            <div className="kpi fb-cmp-kpi"><div className="label">Comments</div><div className="value">{num(cur.comments.length)}</div><div className="fb-change same">All listed below, next to {prevName}&apos;s</div></div>
           </div>
 
           <section>
@@ -710,6 +714,25 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
                 </div>
               </div>
             ) : <div className="panel"><p className="empty-note">Nothing stands out this month: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
+          </section>
+
+          <section>
+            <h2>Comments: {prevName} vs {shortMonth(current!)}</h2>
+            <p className="section-note">Everything patients wrote in each month (N/A left out), grouped by type. Types are changed on the survey&apos;s comments board.</p>
+            <div className="fb-legend-board">{COMMENT_TYPES.map((ct) => <span key={ct.id} className="fb-type-chip" style={{ background: ct.color }}>{ct.label.toUpperCase()}</span>)}</div>
+            <div className="fb-sum-comments">
+              {[{ key: data.prevKey, list: data.prevComments }, { key: current!, list: data.curComments }].map((col, i) => (
+                <div key={col.key} className={`fb-board-col${i ? " fb-sum-current-col" : ""}`}>
+                  <h3>{shortMonth(col.key).toUpperCase()}<small>{monthText(col.key, true).split(" ")[1]} · {col.list.length} comment{col.list.length === 1 ? "" : "s"}</small></h3>
+                  {col.list.length ? col.list.map((c, k) => (
+                    <div key={`${c.response.row}-${k}`} className="fb-card" style={{ background: COMMENT_TYPES.find((ct) => ct.id === c.type)!.color }}>
+                      <p>{c.text}</p>
+                      <div className="fb-card-meta"><span>{c.service} · {dayText(c.response.visit, { month: "short", day: "numeric" })}</span><span>{COMMENT_TYPES.find((ct) => ct.id === c.type)!.label}</span></div>
+                    </div>
+                  )) : <p className="empty-note">No comments in {shortMonth(col.key)}.</p>}
+                </div>
+              ))}
+            </div>
           </section>
         </>
       )}

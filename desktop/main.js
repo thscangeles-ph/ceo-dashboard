@@ -5,7 +5,7 @@ const { app, BrowserWindow, Menu, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const APP_URL = process.env.THSC_DASHBOARD_URL || "https://thscdashboards.vercel.app";
+const APP_URL = process.env.THSC_DASHBOARD_URL || "https://thsc-marketing-dashboard.vercel.app";
 const ORIGIN = new URL(APP_URL).origin;
 const BOUNDS_FILE = path.join(app.getPath("userData"), "window.json");
 
