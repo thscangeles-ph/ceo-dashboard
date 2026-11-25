@@ -144,6 +144,20 @@ An **Install app** button is in the header on every screen, including the sign-i
 
 Installing requires HTTPS, so use the Vercel address. On a computer, Excel files can also be opened with the installed app ("Open with → Summary Dashboard"). The service worker (`public/sw.js`) caches only the app's own files, never workbooks or patient data.
 
+## Windows app (.exe)
+
+`desktop/` holds a Windows desktop app (Electron) that opens the live dashboard (https://thscdashboards.vercel.app) in its own window: the same accounts, shared data and live sync as the web version, and every update to the dashboard shows up without reinstalling. Links to other sites open in the normal browser, File → Print prints, and without internet it shows a page that reconnects by itself.
+
+To build the installer (`desktop/dist/THSC-Summary-Dashboard-Setup-<version>.exe`):
+
+```
+cd desktop
+npm install
+npm run build:win
+```
+
+It builds on Windows, macOS or Linux; on Linux or macOS it needs `makensis` (NSIS, e.g. `apt-get install nsis`), and no Wine. The installer installs for the current user (no administrator rights), adds Start menu and desktop shortcuts, and can be removed in Settings → Apps. The installer isn't code-signed, so Windows SmartScreen may say "Windows protected your PC": click **More info → Run anyway**. To point the app at another address, set `THSC_DASHBOARD_URL` before starting it, or change `APP_URL` in `desktop/main.js`.
+
 ## Excel format
 
 Upload one or more `.xlsx` / `.xls` files. Every sheet is checked, and the header row is found automatically (title rows above it are fine). Header names are matched without regard to case, spaces or punctuation.

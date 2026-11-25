@@ -34,7 +34,8 @@ export function RegisterServiceWorker() {
 type Platform = "ios" | "android" | "mac-safari" | "firefox" | "desktop";
 function detect(): { platform: Platform; standalone: boolean } {
   const ua = navigator.userAgent;
-  const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  // The Windows desktop app (desktop/) marks its user agent, so it counts as installed too.
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true || /THSCDesktop\//.test(ua);
   const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const platform: Platform = ios ? "ios" : /Android/i.test(ua) ? "android" : /Firefox\//.test(ua) ? "firefox"
     : /Macintosh/.test(ua) && /Safari\//.test(ua) && !/Chrome\/|Chromium\/|Edg\//.test(ua) ? "mac-safari" : "desktop";
