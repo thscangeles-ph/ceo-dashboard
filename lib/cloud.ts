@@ -307,6 +307,8 @@ export function friendly(message: string) {
   if (/stack depth limit exceeded/i.test(message)) return "Database setup problem: the access rules are calling each other in a loop (stack depth limit exceeded). In Supabase → SQL Editor, run supabase/schema.sql again; it repairs this. Don't apply Security Advisor's \"security invoker\" change to app_role or full_access.";
   if (/row-level security|permission denied/i.test(message)) return "Your account doesn't have access to this. Ask an Admin, ManCom or Doctors account to change your access in Team.";
   if (/relation .* does not exist|could not find the table/i.test(message)) return "The database isn't set up yet. Run supabase/schema.sql in the Supabase SQL Editor.";
+  // The dashboard reached Vercel, but Supabase didn't answer: usually a paused Supabase project (its address stops existing).
+  if (/HTTP 50[234]|bad gateway|DNS_HOSTNAME_NOT_FOUND|gateway timeout|service unavailable/i.test(message)) return "The clinic's database (Supabase) isn't answering, so nobody can sign in right now. This usually means the free Supabase project was paused after a week without use: whoever manages it opens supabase.com, picks the project and clicks Restore project. Try again a few minutes after it says it is running.";
   if (/failed to fetch|network/i.test(message)) return "Can't reach the server. Check the internet connection and try again.";
   return message;
 }
