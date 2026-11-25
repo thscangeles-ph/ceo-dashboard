@@ -201,16 +201,16 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
     { label: "Responses", value: count(t.responses), note: a.previous ? `${count(a.previous.responses)} in the previous period` : undefined },
     { label: "Satisfied", value: pctText(t.csat, 1), note: "Very Satisfied or Satisfied", accent: true },
     { label: "Very satisfied", value: pctText(t.verySatisfied, 1), note: t.average === null ? undefined : `Average ${t.average.toFixed(2)} of 5` },
-    { label: "Would recommend", value: pctText(t.recommend, 1), note: t.recAnswers ? `${t.rec.Yes} yes, ${t.rec.Maybe} maybe, ${t.rec.No} no` : undefined },
+    { label: "Recommendation rate", value: pctText(t.recommend, 1), note: t.recAnswers ? `${t.rec.Yes} yes, ${t.rec.Maybe} maybe, ${t.rec.No} no` : undefined },
     { label: "Needs improvement", value: count(o.improvements.reduce((n, d) => n + d.items.length, 0)), note: o.improvements.length ? `${o.improvements.length} departments to tap` : "Nothing stands out" },
   ]);
   if (o.findings.length) { r.heading("Interpretation & analysis"); r.findings(o.findings.map((f) => ({ label: f.label, value: "", text: f.text }))); }
   if (a.trend.length > 1) {
     r.heading(`By ${a.byMonth ? "month" : "week"} of visit`);
-    r.table([a.byMonth ? "Month" : "Week of", "Responses", "Satisfied", "Would recommend"], a.trend.map((x) => [x.label, count(x.responses), x.satisfied === null ? "-" : `${x.satisfied.toFixed(1)}%`, x.recommend === null ? "-" : `${x.recommend.toFixed(1)}%`]), { right: [1, 2, 3] });
+    r.table([a.byMonth ? "Month" : "Week of", "Responses", "Satisfied", "Recommendation rate"], a.trend.map((x) => [x.label, count(x.responses), x.satisfied === null ? "-" : `${x.satisfied.toFixed(1)}%`, x.recommend === null ? "-" : `${x.recommend.toFixed(1)}%`]), { right: [1, 2, 3] });
   }
   r.heading("By service");
-  r.table(["Service", "Responses", "Very satisfied", "Satisfied", "Average", "Dissatisfied ratings", "Would recommend", "Comments"],
+  r.table(["Service", "Responses", "Very satisfied", "Satisfied", "Average", "Dissatisfied ratings", "Recommendation rate", "Comments"],
     [...a.services.map((s) => [s.section.name, count(s.responses), pctText(s.verySatisfied), pctText(s.csat), s.average === null ? "-" : s.average.toFixed(2), count(s.dissatisfied), pctText(s.recommend), count(s.comments)]),
       ...(a.services.length > 1 ? [["All services", count(t.responses), pctText(t.verySatisfied), pctText(t.csat), t.average === null ? "-" : t.average.toFixed(2), count(t.dissatisfied), pctText(t.recommend), count(t.comments)]] : [])],
     { right: [1, 2, 3, 4, 5, 6, 7], boldLast: a.services.length > 1 });
