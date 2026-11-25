@@ -599,12 +599,11 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
     const prevKey = day(new Date(y, m - 2, 1).getTime()).slice(0, 7);
     const cur = analyzeFeedback(survey, range(current)), prev = analyzeFeedback(survey, range(prevKey));
     const typeOf = (c: FeedbackSummary["comments"][number]) => tags[commentKey(source.id, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience");
-    const improvements = suggestImprovements(survey, cur, typeOf).flatMap((d) => d.items).sort((a2, b2) => b2.score - a2.score).slice(0, 3);
     // Every comment of both months with its type (the team's choice on the comments board, else the guess), by type then date.
     const order = Object.fromEntries(COMMENT_TYPES.map((ct, i) => [ct.id, i]));
     const typed = (list: FeedbackSummary["comments"]) => list.map((c) => ({ ...c, type: typeOf(c) }))
       .sort((x, y2) => order[x.type] - order[y2.type] || (x.response.visit ?? "").localeCompare(y2.response.visit ?? ""));
-    return { cur, prev: prev.totals.responses ? prev : null, prevKey, improvements, curComments: typed(cur.comments), prevComments: typed(prev.comments) };
+    return { cur, prev: prev.totals.responses ? prev : null, prevKey, curComments: typed(cur.comments), prevComments: typed(prev.comments) };
   }, [survey, current, tags, source.id]);
 
   const labels = survey?.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels;
@@ -622,7 +621,7 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
       <header className="top">
         <div>
           <h1>Patient Feedback: Monthly Summary</h1>
-          <p className="sub">One month at a glance, next to the month before: the main figures, each service&apos;s ratings and what to improve</p>
+          <p className="sub">One month at a glance, next to the month before: the main figures, each service&apos;s ratings and what patients wrote</p>
           <div className="crm-actions no-print">
             <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
@@ -702,19 +701,6 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
             <p className="drill-meta">% satisfied (Very Satisfied or Satisfied) · responses. Few responses can swing a percentage a lot.</p>
           </section>
 
-          <section>
-            <h2>Top things to improve in {shortMonth(current!)}</h2>
-            {data.improvements.length ? (
-              <div className="panel trk-panel">
-                <div className="table-scroll">
-                  <table className="fb-imp-table">
-                    <thead><tr><th>Improvement sentence</th><th>Basis</th><th>Department to tap</th></tr></thead>
-                    <tbody>{data.improvements.map((it) => <tr key={`${it.department}|${it.theme}`}><td className="name fb-imp-text">{it.short}</td><td className="name fb-imp-basis" title={it.evidence.join("\n")}>{basisText(it)}</td><td className="name fb-imp-dept">{it.department}</td></tr>)}</tbody>
-                  </table>
-                </div>
-              </div>
-            ) : <div className="panel"><p className="empty-note">Nothing stands out this month: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
-          </section>
 
           <section>
             <h2>Comments: {prevName} vs {shortMonth(current!)}</h2>
