@@ -714,3 +714,14 @@ table.fb-imp-table { min-width: 720px; }
 .fb-imp-text { font-weight: 600; width: 42%; }
 .fb-imp-basis { color: var(--ink-soft); font-size: .8rem; cursor: help; width: 38%; }
 .fb-imp-dept { font-weight: 700; white-space: nowrap; }
+/* Patient Feedback: Monthly Summary */
+.fb-change { font-size: .76rem; margin-top: 4px; color: var(--ink-soft); }
+.fb-change.up { color: #2e7d32; font-weight: 700; }
+.fb-change.down { color: #c62828; font-weight: 700; }
+td.fb-change { font-family: var(--font-mono-stack); font-size: .82rem; margin: 0; }
+.fb-sum-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 16px; }
+.fb-sum-charts > .panel + .panel { margin-top: 0; }
+.fb-sum-charts h3 { font-size: .9rem !important; font-weight: 800 !important; letter-spacing: .02em; }
+.fb-sum-current { box-shadow: inset 0 3px 0 var(--watch); }
+table.fb-sum-table { min-width: 520px; }
+@media (max-width: 600px) { .fb-sum-charts { grid-template-columns: 1fr; } }

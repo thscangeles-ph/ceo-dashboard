@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BarChart3, MessageSquareHeart, Mic, QrCode, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
+import { AlertCircle, BarChart3, CalendarRange, MessageSquareHeart, Mic, QrCode, PanelLeftClose, PanelLeftOpen, PhilippinePeso, ClipboardList, ListChecks, Cloud, HardDrive, LogOut, MousePointerClick, Printer, RefreshCw, Upload, UserCog, Users } from "lucide-react";
 import { InstallAppButton } from "@/components/pwa";
 import { EditorProvider, InquiryEditor } from "@/components/inquiry-editor";
 import type { Workspace } from "@/lib/store";
@@ -11,7 +11,7 @@ import type { Role } from "@/lib/cloud";
 import { isFullAccess, ROLE_LABEL } from "@/lib/cloud";
 import { cloudConfigured, configProblem, deleteInquiry as removeInquiry, deletePersonal, deletePodcastItem, deleteSales, deleteSheets, getCloud, getRealtime, loadCloud, loadFeedbackTags, loadInquiries, loadPodcast, loadProfile, revive, saveInquiries, saveFeedbackTag, savePersonal, savePodcastItem, saveSales, saveSheets, saveSpend } from "@/lib/cloud";
 import { PodcastDashboard } from "@/components/podcast";
-import { FeedbackDashboard } from "@/components/feedback";
+import { FeedbackDashboard, FeedbackMonthlySummary } from "@/components/feedback";
 import type { CommentType, FeedbackSheet } from "@/lib/feedback";
 import type { PodcastStore } from "@/lib/podcast";
 import { localPodcastStore } from "@/lib/podcast";
@@ -64,7 +64,7 @@ export default function Home() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const closeDrill = useCallback(() => setDrill(null), []);
   const [filters, setFilters] = useState<Filters>({ patientType: "all", status: "paid", from: "", to: "" });
-  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker" | "feedback" | "feedbackQr" | "podcast">("summary");
+  const [tab, setTab] = useState<"summary" | "acquisition" | "crm" | "tracker" | "feedback" | "feedbackQr" | "feedbackSummary" | "podcast">("summary");
   // The sidebar can shrink to icons for more room; remembered on this device.
   const [sideCollapsed, setSideCollapsed] = useState(false);
   useEffect(() => { try { if (localStorage.getItem("thsc-sidebar") === "collapsed") setTimeout(() => setSideCollapsed(true), 0); } catch { /* storage blocked */ } }, []);
@@ -299,6 +299,7 @@ export default function Home() {
   const saveTag = useCallback((key: string, type: CommentType) => saveFeedbackTag(getCloud()!, key, type, actorEmail), [actorEmail]);
   const loadInPerson = useCallback((fresh: boolean) => loadFeedback("inperson", fresh), [loadFeedback]);
   const loadQr = useCallback((fresh: boolean) => loadFeedback("qr", fresh), [loadFeedback]);
+  const feedbackSources = useMemo(() => [{ id: "inperson", name: "In-Person Survey", load: loadInPerson }, { id: "qr", name: "QR Survey", load: loadQr }], [loadInPerson, loadQr]);
 
   const toggleRemember = (keep: boolean) => {
     setRemember(keep); setRememberState(keep);
@@ -518,6 +519,7 @@ export default function Home() {
     { key: "tracker", label: "Inquiry Tracker", short: "Tracker", icon: ListChecks, show: canEdit, count: inquiries.length },
     { key: "feedback", label: "In-Person Survey", short: "In-person", icon: MessageSquareHeart, show: role !== "concierge", group: "Patient Feedback" },
     { key: "feedbackQr", label: "QR Survey", short: "QR survey", icon: QrCode, show: role !== "concierge" },
+    { key: "feedbackSummary", label: "Monthly Summary", short: "Monthly", icon: CalendarRange, show: role !== "concierge" },
     { key: "podcast", label: "Podcast Tracker & Scheduler", short: "Podcast", icon: Mic, show: role !== "concierge", group: "Podcast" },
   ];
 
@@ -632,6 +634,7 @@ export default function Home() {
           <FeedbackDashboard key="inperson" source="inperson" name="In-Person Survey" load={loadInPerson} loadTags={cloud ? loadTags : undefined} saveTag={cloud ? saveTag : undefined}
             intro="The paper survey patients answer at the clinic, typed into the feedback form, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />
         )}
+        {!restoring && tab === "feedbackSummary" && role !== "concierge" && <FeedbackMonthlySummary sources={feedbackSources} loadTags={cloud ? loadTags : undefined} />}
         {!restoring && tab === "feedbackQr" && role !== "concierge" && (
           <FeedbackDashboard key="qr" source="qr" name="QR Survey" load={loadQr} loadTags={cloud ? loadTags : undefined} saveTag={cloud ? saveTag : undefined}
             intro="The survey patients answer themselves by scanning the QR code, live from its Google Sheet: satisfaction by service and question, who answered, and what patients said" />

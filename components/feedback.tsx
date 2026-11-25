@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import { PdfButton } from "@/components/pdf-button";
 import { feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
-import type { CommentType } from "@/lib/feedback";
+import type { CommentType, FeedbackSummary } from "@/lib/feedback";
 import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, basisText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
 
 const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
@@ -470,7 +470,7 @@ function AnswerTip({ active, payload, points, title, unit }: { active?: boolean;
 type ChartState = { activeTooltipIndex?: number | string | null; activeLabel?: string | number } | null | undefined;
 
 /** Services as 100% stacked columns, Very Satisfied at the bottom. */
-function ServiceColumns({ rows, points, selected, onSelect }: { rows: { name: string; counts: Record<number, number>; sub: string }[]; points: Point[]; selected: string; onSelect: (name: string) => void }) {
+function ServiceColumns({ rows, points, selected, onSelect, height = 360, colWidth = 92 }: { rows: { name: string; counts: Record<number, number>; sub: string }[]; points: Point[]; selected: string; onSelect?: (name: string) => void; height?: number; colWidth?: number }) {
   const data = rows.map((r) => {
     const sum = points.reduce((s, p) => s + (r.counts[p.p] || 0), 0) || 1;
     return { name: r.name, sub: r.sub, ...Object.fromEntries(points.flatMap((p) => [[`p${p.p}`, ((r.counts[p.p] || 0) / sum) * 100], [`c${p.p}`, r.counts[p.p] || 0]])) };
@@ -478,15 +478,15 @@ function ServiceColumns({ rows, points, selected, onSelect }: { rows: { name: st
   const subs = new Map(rows.map((r) => [r.name, r.sub]));
   return (
     <div className="fb-scroll">
-      <div className="chart-box fb-columns" style={{ minWidth: rows.length * 92, height: 360 }}>
+      <div className={`chart-box${onSelect ? " fb-columns" : ""}`} style={{ minWidth: rows.length * colWidth, height }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="22%"
-            onClick={(state: ChartState) => { const i = Number(state?.activeTooltipIndex); if (Number.isInteger(i) && data[i]) onSelect(data[i].name); }}>
+            onClick={(state: ChartState) => { const i = Number(state?.activeTooltipIndex); if (onSelect && Number.isInteger(i) && data[i]) onSelect(data[i].name); }}>
             <CartesianGrid vertical={false} stroke="var(--line)" />
             <XAxis dataKey="name" interval={0} height={74} tickLine={false} axisLine={{ stroke: "var(--line)" }} tick={columnTick(13, (n) => subs.get(n), selected)} />
             <YAxis tick={axisTick} tickLine={false} axisLine={false} width={40} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} />
             <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} content={<AnswerTip points={points} unit="ratings" title={(r) => `${r.name} · ${r.sub} responses`} />} />
-            {[...points].map((p, i, list) => <Bar key={p.p} dataKey={`p${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} cursor="pointer" radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} />)}
+            {[...points].map((p, i, list) => <Bar key={p.p} dataKey={`p${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} cursor={onSelect ? "pointer" : undefined} radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} />)}
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -535,5 +535,184 @@ function CountColumns({ items: all, total }: { items: { name: string; value: num
         </ResponsiveContainer>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Monthly Summary: one month next to the month before, short and easy to read.
+
+const pointsFor = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) => ({ p, label: labels?.[p] ?? String(p) }));
+const shortMonth = (key: string) => monthText(key, true).split(" ")[0];
+
+/** A figure for this month next to last month's, with the change: up is better for every figure here. */
+function CompareCard({ label, cur, prev, percent, prevLabel, accent, neutral }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string; accent?: boolean; neutral?: boolean }) {
+  const show = (v: number | null) => (v === null ? "—" : percent ? pctText(v, 1) : num(v));
+  const change = cur !== null && prev !== null ? (percent ? (cur - prev) * 100 : cur - prev) : null;
+  const tone = change === null || Math.abs(change) < (percent ? 0.05 : 0.5) ? "same" : change > 0 ? "up" : "down";
+  return (
+    <div className={`kpi fb-cmp-kpi${accent ? " accent" : ""}`}>
+      <div className="label">{label}</div>
+      <div className="value">{show(cur)}</div>
+      <div className={`fb-change ${neutral ? "same" : tone}`}>
+        {change === null ? "No earlier month to compare" : tone === "same" ? "Same as " : `${tone === "up" ? "▲" : "▼"} ${percent ? `${Math.abs(change).toFixed(1)} pts` : num(Math.abs(change))} vs `}
+        {change !== null && <>{prevLabel} ({show(prev)})</>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Monthly Summary sub-section: for the chosen survey and month, the main figures, each service's ratings
+ * (the By service chart) and the top improvements, all next to the month before.
+ */
+export function FeedbackMonthlySummary({ sources, loadTags }: {
+  sources: { id: string; name: string; load: (fresh: boolean) => Promise<FeedbackSheet> }[];
+  loadTags?: () => Promise<{ tags: Record<string, CommentType>; missing: boolean }>;
+}) {
+  const [sourceId, setSourceId] = useState(sources[0].id);
+  const source = sources.find((x) => x.id === sourceId) ?? sources[0];
+  const [sheet, setSheet] = useState<FeedbackSheet | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [month, setMonth] = useState<string | null>(null);
+  const [tags, setTags] = useState<Record<string, CommentType>>({});
+
+  const refresh = useCallback(async (fresh: boolean) => {
+    setLoading(true);
+    try { setSheet(await source.load(fresh)); setError(""); } catch (e) { setError((e as Error).message); }
+    if (loadTags) { try { setTags((await loadTags()).tags); } catch { /* the guesses are used */ } }
+    setLoading(false);
+  }, [source, loadTags]);
+  useEffect(() => {
+    const first = setTimeout(() => void refresh(false), 0);
+    const poll = setInterval(() => { if (document.visibilityState === "visible") void refresh(false); }, POLL_MS);
+    return () => { clearTimeout(first); clearInterval(poll); };
+  }, [refresh]);
+
+  const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow, sheet.where) : null), [sheet]);
+  const months = useMemo(() => Array.from(new Set((survey?.responses || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort(), [survey]);
+  const current = month && months.includes(month) ? month : months.at(-1) ?? null;
+  const data = useMemo(() => {
+    if (!survey || !current) return null;
+    const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: day(new Date(y, m, 0).getTime()), service: "" }; };
+    const [y, m] = current.split("-").map(Number);
+    const prevKey = day(new Date(y, m - 2, 1).getTime()).slice(0, 7);
+    const cur = analyzeFeedback(survey, range(current)), prev = analyzeFeedback(survey, range(prevKey));
+    const typeOf = (c: FeedbackSummary["comments"][number]) => tags[commentKey(source.id, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience");
+    const improvements = suggestImprovements(survey, cur, typeOf).flatMap((d) => d.items).sort((a2, b2) => b2.score - a2.score).slice(0, 3);
+    return { cur, prev: prev.totals.responses ? prev : null, prevKey, improvements };
+  }, [survey, current, tags, source.id]);
+
+  const labels = survey?.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels;
+  const cur = data?.cur, prev = data?.prev;
+  const prevName = data ? shortMonth(data.prevKey) : "";
+  // One service order for both months (this month's biggest first), so the two charts line up.
+  const serviceNames = cur ? Array.from(new Set([...cur.services.map((x) => x.section.name), ...(prev?.services.map((x) => x.section.name) ?? [])])) : [];
+  const rows = (a: FeedbackSummary) => [
+    ...(a.services.length > 1 ? [{ name: "All services", counts: sumCounts(a.services.flatMap((x) => x.questions)), sub: `${pctText(a.totals.csat)} · ${num(a.totals.responses)}` }] : []),
+    ...[...a.services].sort((x, y) => serviceNames.indexOf(x.section.name) - serviceNames.indexOf(y.section.name)).map((x) => ({ name: x.section.name, counts: sumCounts(x.questions), sub: `${pctText(x.csat)} · ${num(x.responses)}` })),
+  ];
+
+  return (
+    <>
+      <header className="top">
+        <div>
+          <h1>Patient Feedback: Monthly Summary</h1>
+          <p className="sub">One month at a glance, next to the month before: the main figures, each service&apos;s ratings and what to improve</p>
+          <div className="crm-actions no-print">
+            <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
+          </div>
+        </div>
+        <div className="period">
+          {current ? <>Month<br /><strong>{monthText(current, true)}</strong><div className="filters-note">compared with {data?.prevKey ? monthText(data.prevKey, true) : "—"}</div></> : <>Month<br /><strong>—</strong></>}
+        </div>
+      </header>
+
+      <div className="filterbar no-print">
+        <label>Survey
+          <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setMonth(null); setSheet(null); }}>
+            {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
+        <label>Month
+          <select value={current ?? ""} onChange={(e) => setMonth(e.target.value)} disabled={!months.length}>
+            {[...months].reverse().map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Could not load the responses.</strong> {error}</div></div>}
+      {sheet && sheet.status !== "ok" && <div className="alert" role="alert"><AlertCircle size={18} /><div>{sheet.message}</div></div>}
+      {!sheet && loading && <p className="empty-note" role="status">Reading the feedback sheet…</p>}
+      {survey && !months.length && <div className="panel"><p className="empty-note">No dated responses yet.</p></div>}
+
+      {cur && data && (
+        <>
+          <div className="kpis">
+            <CompareCard label="Responses" cur={cur.totals.responses} prev={prev?.totals.responses ?? null} prevLabel={prevName} />
+            <CompareCard label="Satisfied" cur={cur.totals.csat} prev={prev?.totals.csat ?? null} prevLabel={prevName} percent accent />
+            <CompareCard label="Very satisfied" cur={cur.totals.verySatisfied} prev={prev?.totals.verySatisfied ?? null} prevLabel={prevName} percent />
+            <CompareCard label="Would recommend" cur={cur.totals.recommend} prev={prev?.totals.recommend ?? null} prevLabel={prevName} percent />
+            <CompareCard label="Comments" cur={cur.comments.length} prev={prev?.comments.length ?? null} prevLabel={prevName} neutral />
+          </div>
+
+          <section>
+            <h2>By service: {prevName} vs {shortMonth(current!)}</h2>
+            <p className="section-note">Each service&apos;s ratings from Very Satisfied (bottom) to Very Dissatisfied (top), N/A left out. Under each column: % satisfied and responses. Hover a column for the numbers.</p>
+            <AnswerLegend points={pointsFor(labels)} />
+            <div className="fb-sum-charts">
+              <div className="panel">
+                <h3>{monthText(data.prevKey, true).toUpperCase()}{prev ? ` = ${num(prev.totals.responses)} RESPONSES` : ""}</h3>
+                {prev && prev.services.length ? <ServiceColumns rows={rows(prev)} points={pointsFor(labels)} selected="" height={300} colWidth={70} /> : <p className="empty-note">No responses in {prevName}.</p>}
+              </div>
+              <div className="panel fb-sum-current">
+                <h3>{monthText(current!, true).toUpperCase()} = {num(cur.totals.responses)} RESPONSES</h3>
+                {cur.services.length ? <ServiceColumns rows={rows(cur)} points={pointsFor(labels)} selected="" height={300} colWidth={70} /> : <p className="empty-note">No ratings in {shortMonth(current!)}.</p>}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>What changed</h2>
+            <div className="panel trk-panel">
+              <div className="table-scroll">
+                <table className="fb-sum-table">
+                  <thead><tr><th>Service</th><th className="num">{prevName}</th><th className="num">{shortMonth(current!)}</th><th className="num">Change</th></tr></thead>
+                  <tbody>
+                    {serviceNames.map((name) => {
+                      const c = cur.services.find((x) => x.section.name === name), p = prev?.services.find((x) => x.section.name === name);
+                      const change = c?.csat != null && p?.csat != null ? (c.csat - p.csat) * 100 : null;
+                      return (
+                        <tr key={name}>
+                          <td className="name">{name}</td>
+                          <td className="num">{p ? `${pctText(p.csat)} · ${num(p.responses)}` : "—"}</td>
+                          <td className="num strong">{c ? `${pctText(c.csat)} · ${num(c.responses)}` : "—"}</td>
+                          <td className={`num fb-change ${change === null || Math.abs(change) < 0.5 ? "same" : change > 0 ? "up" : "down"}`}>{change === null ? (c && !p ? "new" : "—") : Math.abs(change) < 0.5 ? "same" : `${change > 0 ? "▲" : "▼"} ${Math.abs(change).toFixed(0)} pts`}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p className="drill-meta">% satisfied (Very Satisfied or Satisfied) · responses. Few responses can swing a percentage a lot.</p>
+          </section>
+
+          <section>
+            <h2>Top things to improve in {shortMonth(current!)}</h2>
+            {data.improvements.length ? (
+              <div className="panel trk-panel">
+                <div className="table-scroll">
+                  <table className="fb-imp-table">
+                    <thead><tr><th>Improvement sentence</th><th>Basis</th><th>Department to tap</th></tr></thead>
+                    <tbody>{data.improvements.map((it) => <tr key={`${it.department}|${it.theme}`}><td className="name fb-imp-text">{it.short}</td><td className="name fb-imp-basis" title={it.evidence.join("\n")}>{basisText(it)}</td><td className="name fb-imp-dept">{it.department}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : <div className="panel"><p className="empty-note">Nothing stands out this month: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
+          </section>
+        </>
+      )}
+    </>
   );
 }
