@@ -1,7 +1,7 @@
 {
   "name": "thsc-summary-dashboard-desktop",
   "productName": "THSC Summary Dashboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "THSC Summary Dashboard for Windows: the live dashboard in its own window, with the same accounts and shared data.",
   "author": "The Heart Specialists Clinic",
   "private": true,

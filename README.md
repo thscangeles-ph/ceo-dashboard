@@ -148,7 +148,7 @@ Installing requires HTTPS, so use the Vercel address. On a computer, Excel files
 
 ## Windows app (.exe)
 
-`desktop/` holds a Windows desktop app (Electron) that opens the live dashboard (https://thscdashboards.vercel.app) in its own window: the same accounts, shared data and live sync as the web version, and every update to the dashboard shows up without reinstalling. Links to other sites open in the normal browser, File → Print prints, and without internet it shows a page that reconnects by itself.
+`desktop/` holds a Windows desktop app (Electron) that opens the live dashboard (https://thsc-marketing-dashboard.vercel.app) in its own window: the same accounts, shared data and live sync as the web version, and every update to the dashboard shows up without reinstalling. Links to other sites open in the normal browser, File → Print prints, and without internet it shows a page that reconnects by itself.
 
 To build the installer (`desktop/dist/THSC-Summary-Dashboard-Setup-<version>.exe`):
 

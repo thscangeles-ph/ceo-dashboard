@@ -22,7 +22,7 @@
     <button type="button" id="retry">Try again</button>
   </div>
   <script>
-    const target = new URLSearchParams(location.search).get("url") || "https://thscdashboards.vercel.app";
+    const target = new URLSearchParams(location.search).get("url") || "https://thsc-marketing-dashboard.vercel.app";
     const go = () => { location.href = target; };
     document.getElementById("retry").addEventListener("click", go);
     window.addEventListener("online", go);
