@@ -1,0 +1,718 @@
+"use client";
+
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, CheckCircle2, Eye, Info, RefreshCw, Search, Sheet } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { PdfButton } from "@/components/pdf-button";
+import { feedbackReport } from "@/lib/reports";
+import type { FeedbackSheet, Filters } from "@/lib/feedback";
+import type { CommentType, FeedbackSummary } from "@/lib/feedback";
+import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, basisText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
+
+const axisTick = { fill: "var(--ink-soft)", fontSize: 11, fontFamily: "var(--font-mono-stack)" };
+const tooltipStyle = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 6, color: "var(--ink)", fontSize: 12 };
+// Rating points, best first: Very Satisfied green, Satisfied light green, Neutral yellow, Dissatisfied red, Very Dissatisfied dark red.
+const POINT_COLOR: Record<number, string> = { 5: "#2e7d32", 4: "#9ccc65", 3: "#f4c430", 2: "#d32f2f", 1: "#7f1d1d" };
+const TONE_ICON = { ok: CheckCircle2, watch: Eye, info: Info };
+const num = (v: number) => v.toLocaleString("en-PH");
+const day = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const POLL_MS = 120_000;
+
+/**
+ * The Patient Feedback tab: survey results from the feedback form's Google Sheet (RAW DATA), live. The
+ * period follows each patient's date of visit (or, in a sheet without one, the day they answered). Used for both
+ * the in-person survey and the QR survey. Admin, ManCom, Doctors and Marketing can open it.
+ */
+export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag }: {
+  load: (fresh: boolean) => Promise<FeedbackSheet>; name: string; intro: string;
+  /** "inperson" or "qr": keeps each survey's comment types apart. */
+  source: string;
+  /** The comment types the team set (shared), and saving one; absent without accounts. */
+  loadTags?: () => Promise<{ tags: Record<string, CommentType>; missing: boolean }>;
+  saveTag?: (key: string, type: CommentType) => Promise<void>;
+}) {
+  const [sheet, setSheet] = useState<FeedbackSheet | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [preset, setPreset] = useState("all");
+  const [filters, setFilters] = useState<Filters>({ from: "", to: "", service: "" });
+  const [query, setQuery] = useState("");
+  const [monthFrom, setMonthFrom] = useState<string | null>(null);
+  const [monthTo, setMonthTo] = useState<string | null>(null);
+  const [tags, setTags] = useState<Record<string, CommentType>>({});
+  const [tagNote, setTagNote] = useState("");
+  const [savingKey, setSavingKey] = useState("");
+  const [hidden, setHidden] = useState<Set<CommentType>>(new Set());
+  const [dept, setDept] = useState("");
+
+  const refresh = useCallback(async (fresh: boolean) => {
+    setLoading(true);
+    try { setSheet(await load(fresh)); setError(""); } catch (e) { setError((e as Error).message); }
+    setLoading(false);
+  }, [load]);
+  const refreshTags = useCallback(async () => {
+    if (!loadTags) return;
+    try {
+      const r = await loadTags(); setTags(r.tags);
+      setTagNote(r.missing ? "Changing a comment's type needs the updated supabase/schema.sql: run it once in Supabase → SQL Editor." : "");
+    } catch (e) { setTagNote((e as Error).message); }
+  }, [loadTags]);
+  useEffect(() => {
+    const first = setTimeout(() => { void refresh(false); void refreshTags(); }, 0);
+    // New responses, and comment types changed by others, show up while the tab is open.
+    const poll = setInterval(() => { if (document.visibilityState === "visible") { void refresh(false); void refreshTags(); } }, POLL_MS);
+    return () => { clearTimeout(first); clearInterval(poll); };
+  }, [refresh, refreshTags]);
+
+  const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow, sheet.where) : null), [sheet]);
+  const a = useMemo(() => (survey ? analyzeFeedback(survey, filters) : null), [survey, filters]);
+  const findings = useMemo(() => (a ? feedbackFindings(a) : []), [a]);
+  const months = useMemo(() => Array.from(new Set((survey?.responses || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort().reverse(), [survey]);
+  const serviceCounts = useMemo(() => (survey ? analyzeFeedback(survey, { ...filters, service: "" }).services : []), [survey, filters]);
+
+  const choosePreset = (value: string) => {
+    setPreset(value);
+    const today = Date.now();
+    if (value === "all") setFilters((f) => ({ ...f, from: "", to: "" }));
+    else if (value.startsWith("m:")) {
+      const [y, m] = value.slice(2).split("-").map(Number);
+      setFilters((f) => ({ ...f, from: `${value.slice(2)}-01`, to: day(new Date(y, m, 0).getTime()) }));
+    } else if (value === "30d" || value === "90d") setFilters((f) => ({ ...f, from: day(today - (value === "30d" ? 29 : 89) * 86_400_000), to: day(today) }));
+    else if (value === "year") setFilters((f) => ({ ...f, from: `${new Date().getFullYear()}-01-01`, to: day(today) }));
+  };
+  const setDate = (key: "from" | "to", value: string) => { setPreset("custom"); setFilters((f) => ({ ...f, [key]: value })); };
+
+  const periodText = a?.period ? (a.period.from === a.period.to ? dayText(a.period.from) : `${dayText(a.period.from)} – ${dayText(a.period.to)}`) : sheet?.status === "ok" ? "No responses in this period" : "—";
+  // The period is the date of visit; a sheet without one (a self-service form) uses the day the patient answered.
+  const dateName = survey && !survey.visit ? "Date answered" : "Date of visit";
+  const unit = survey && !survey.visit ? "answer" : "visit";
+  const rangeText = filters.from || filters.to ? `${filters.from ? dayText(filters.from) : `first ${unit}`} – ${filters.to ? dayText(filters.to) : `latest ${unit}`}` : unit === "visit" ? "all dates of visit" : "all dates answered";
+  // Several response tabs (one per service form) are read together; each tab is a service.
+  const tabCount = sheet?.where ? sheet.tab.split(", ").length : 1;
+  const tabsText = tabCount > 1 ? `${tabCount} response tabs (${sheet!.tab})` : `${sheet?.tab ?? ""} tab`;
+  const t = a?.totals;
+  const delta = a?.previous && a.previous.responses >= 5 && t?.csat != null && a.previous.csat !== null ? (t.csat - a.previous.csat) * 100 : null;
+
+  // Monthly results: the months in the chosen period, the latest first chosen; each compared with the month before.
+  const monthKeys = useMemo(() => Array.from(new Set((a?.rows || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort(), [a]);
+  // Months side by side (the last two by default), each with the month before it for the comparison.
+  const compare = useMemo(() => {
+    if (!survey || !monthKeys.length) return null;
+    const to = monthTo && monthKeys.includes(monthTo) ? monthTo : monthKeys.at(-1)!;
+    let from = monthFrom && monthKeys.includes(monthFrom) ? monthFrom : monthKeys[Math.max(0, monthKeys.indexOf(to) - 1)];
+    if (from > to) from = to;
+    const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: day(new Date(y, m, 0).getTime()) }; };
+    const before = (key: string) => { const [y, m] = key.split("-").map(Number); return day(new Date(y, m - 2, 1).getTime()).slice(0, 7); };
+    const months = monthKeys.filter((k) => k >= from && k <= to).map((key) => {
+      const cur = analyzeFeedback(survey, { ...range(key), service: filters.service });
+      const prev = analyzeFeedback(survey, { ...range(before(key)), service: filters.service });
+      return { key, cur, prev: prev.totals.responses ? prev : null, prevKey: prev.totals.responses ? before(key) : null };
+    });
+    const totals = new Map<string, number>();
+    months.forEach((m) => m.cur.services.forEach((x) => totals.set(x.section.name, (totals.get(x.section.name) || 0) + x.responses)));
+    const services = Array.from(totals).sort((x, y) => y[1] - x[1]).map(([name]) => name);
+    const hasVeryLow = months.some((m) => m.cur.services.some((x) => x.questions.some((q) => q.counts[1])));
+    return { from, to, months, services, hasVeryLow };
+  }, [survey, monthKeys, monthFrom, monthTo, filters.service]);
+
+  // The comments board: one column per month, each comment with the team's type or the first guess.
+  const board = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const all = (a?.comments || []).map((c) => {
+      const key = commentKey(source, c.response.visit, c.text);
+      return { ...c, key, type: tags[key] ?? guessCommentType(c.text, c.kind === "Previous experience") };
+    }).filter((c) => !needle || c.text.toLowerCase().includes(needle) || c.service.toLowerCase().includes(needle));
+    const counts = Object.fromEntries(COMMENT_TYPES.map((ct) => [ct.id, all.filter((c) => c.type === ct.id).length])) as Record<CommentType, number>;
+    const shown = all.filter((c) => !hidden.has(c.type));
+    const order = Object.fromEntries(COMMENT_TYPES.map((ct, i) => [ct.id, i]));
+    const keys = Array.from(new Set(all.map((c) => c.response.visit?.slice(0, 7) || "undated"))).sort();
+    const columns = keys.map((mk) => ({ month: mk, items: shown.filter((c) => (c.response.visit?.slice(0, 7) || "undated") === mk).sort((x, y) => order[x.type] - order[y.type] || (x.response.visit ?? "").localeCompare(y.response.visit ?? "")) }));
+    return { columns, counts };
+  }, [a, tags, query, hidden, source]);
+  // Needs improvement: uses each comment's type as shown on the board (the team's choice, else the guess).
+  const improvements = useMemo(() => (survey && a ? suggestImprovements(survey, a, (c) => tags[commentKey(source, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience")) : []), [survey, a, tags, source]);
+  const improvementCount = improvements.reduce((n, d) => n + d.items.length, 0);
+  const improvementRows = improvements.filter((d) => !dept || d.department === dept).flatMap((d) => d.items).sort((x, y) => y.score - x.score);
+
+  const changeType = async (key: string, type: CommentType) => {
+    if (!saveTag) return;
+    setSavingKey(key); setTagNote("");
+    const before = tags[key];
+    setTags((t) => ({ ...t, [key]: type }));
+    try { await saveTag(key, type); } catch (e) { setTags((t) => { const n = { ...t }; if (before) n[key] = before; else delete n[key]; return n; }); setTagNote((e as Error).message); }
+    setSavingKey("");
+  };
+  const pointsOf = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) => ({ p, label: labels?.[p] ?? String(p) }));
+
+  return (
+    <>
+      <header className="top">
+        <div>
+          <h1>Patient Feedback: {name}</h1>
+          <p className="sub">{intro}</p>
+          <div className="crm-actions no-print">
+            {a && survey && <PdfButton make={() => feedbackReport(a, survey, { name, findings, improvements, service: filters.service, comments: board.columns.flatMap((col) => col.items).map((c) => ({ visit: c.response.visit, type: c.type, service: c.service, text: c.text })), filters: [`${dateName}: ${rangeText}`, `Service: ${filters.service || "all services"}`].join(" · ") })} />}
+            <button type="button" className="btn btn-outline" onClick={() => { void refresh(true); void refreshTags(); }} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
+          </div>
+        </div>
+        <div className="period">
+          {dateName}<br /><strong>{periodText}</strong>
+          <div className="filters-note">{sheet?.status === "ok" ? `Live from Google Sheets · updated ${new Date(sheet.fetchedAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}` : loading ? "Connecting to Google Sheets…" : "Not connected"}</div>
+        </div>
+      </header>
+
+      {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Could not load the responses.</strong> {error}</div></div>}
+      {sheet && sheet.status !== "ok" && (
+        <div className="panel empty-tab">
+          <h3><Sheet size={16} />{sheet.status === "not-configured" ? "Connect the feedback sheet" : "The feedback sheet can't be read right now"}</h3>
+          <p className="empty-note">{sheet.message}</p>
+          {sheet.status === "not-configured" && (
+            <ol className="fb-steps">
+              <li>Google Cloud (same project as the YouTube key): enable the <strong>Google Sheets API</strong>.</li>
+              <li>IAM &amp; Admin → Service Accounts → create one, then Keys → Add key → JSON.</li>
+              <li>In the feedback Google Sheet: Share → add the service account&apos;s email as <strong>Viewer</strong>.</li>
+              <li>Vercel → Settings → Environment Variables: <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> = the whole .json file, then redeploy.</li>
+            </ol>
+          )}
+        </div>
+      )}
+      {!sheet && loading && <p className="empty-note" role="status" style={{ marginTop: 20 }}>Reading the feedback sheet…</p>}
+
+      {a && survey && t && (
+        <>
+          <div className="filterbar no-print">
+            <label>Period
+              <select value={preset} onChange={(e) => choosePreset(e.target.value)}>
+                <option value="all">{unit === "visit" ? "All dates of visit" : "All dates answered"}</option>
+                {months.map((m) => <option key={m} value={`m:${m}`}>{monthText(m, true)}</option>)}
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="year">This year</option>
+                {preset === "custom" && <option value="custom">Custom dates</option>}
+              </select>
+            </label>
+            <label>From<input type="date" value={filters.from} onChange={(e) => setDate("from", e.target.value)} /></label>
+            <label>To<input type="date" value={filters.to} onChange={(e) => setDate("to", e.target.value)} /></label>
+            <label>Service
+              <select value={filters.service} onChange={(e) => setFilters((f) => ({ ...f, service: e.target.value }))}>
+                <option value="">All services</option>
+                {serviceCounts.map((s) => <option key={s.section.name} value={s.section.name}>{s.section.name} · {s.responses}</option>)}
+                {filters.service && !serviceCounts.some((s) => s.section.name === filters.service) && <option value={filters.service}>{filters.service} · 0</option>}
+              </select>
+            </label>
+          </div>
+          <p className="click-hint no-print"><Sheet size={15} aria-hidden />Every response in the sheet&apos;s {tabsText}, by {dateName.toLowerCase()}; new responses appear within a few minutes. N/A answers are left out of the percentages.</p>
+
+          <div className="kpis">
+            <div className="kpi"><div className="label">Responses</div><div className="value">{num(t.responses)}</div><div className="note">{a.previous ? `${num(a.previous.responses)} in the previous period` : `${num(survey.responses.length)} in the sheet${a.undated ? ` · ${a.undated} without a visit date` : ""}`}</div></div>
+            <div className="kpi accent"><div className="label">Satisfied</div><div className="value">{pctText(t.csat, 1)}</div><div className="note">{delta !== null ? `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} pts vs previous period` : "Very Satisfied or Satisfied ratings"}</div></div>
+            <div className="kpi"><div className="label">Very satisfied</div><div className="value">{pctText(t.verySatisfied, 1)}</div><div className="note">Average {t.average === null ? "—" : t.average.toFixed(2)} of 5</div></div>
+            <div className="kpi"><div className="label">Would recommend</div><div className="value">{pctText(t.recommend, 1)}</div><div className="note">{t.recAnswers ? `${t.rec.Yes} yes · ${t.rec.Maybe} maybe · ${t.rec.No} no` : "No answers yet"}</div></div>
+            <div className="kpi"><div className="label">Needs improvement</div><div className="value">{num(improvementCount)}</div><div className="note">{improvementCount ? `Suggestions for ${improvements.length} department${improvements.length === 1 ? "" : "s"}, ${improvements[0].department} first` : "Nothing stands out"}</div></div>
+          </div>
+
+          {findings.length > 0 && (
+            <section>
+              <h2>Interpretation &amp; analysis</h2>
+              <p className="section-note">Worked out from the responses in this period and updated with every new response.</p>
+              <div className="findings fb-findings">
+                {findings.map((f) => { const Icon = TONE_ICON[f.tone]; return <div key={f.label} className={`finding ${f.tone}`}><div className="label"><Icon size={13} aria-hidden />{f.label}</div><p>{f.text}</p></div>; })}
+              </div>
+            </section>
+          )}
+
+          {a.trend.length > 0 && (
+            <section>
+              <h2>Over time</h2>
+              <p className="section-note">{unit === "visit" ? `By ${a.byMonth ? "month" : "week"} of visit.` : `By ${a.byMonth ? "month" : "week"} the survey was answered.`}</p>
+              <div className="grid-even">
+                <div className="panel">
+                  <h3>Responses</h3>
+                  <div className="chart-box">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={a.trend} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+                        <CartesianGrid vertical={false} stroke="var(--line)" />
+                        <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval="preserveStartEnd" minTickGap={6} />
+                        <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+                        <Tooltip cursor={{ fill: "var(--line)", opacity: 0.4 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(v) => [num(Number(v)), "Responses"]} labelFormatter={(l) => (a.byMonth ? l : `Week of ${l}`)} />
+                        <Bar dataKey="responses" fill="var(--s2)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="panel">
+                  <h3>Satisfied and would recommend (%)</h3>
+                  <div className="chart-box">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={a.trend} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
+                        <CartesianGrid vertical={false} stroke="var(--line)" />
+                        <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: "var(--line)" }} interval="preserveStartEnd" minTickGap={6} />
+                        <YAxis tick={axisTick} tickLine={false} axisLine={false} width={36} domain={[(min: number) => Math.max(0, Math.floor((min - 5) / 5) * 5), 100]} tickFormatter={(v) => `${v}%`} />
+                        <Tooltip contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(v, name) => [v === null ? "—" : `${Number(v).toFixed(1)}%`, name]} labelFormatter={(l) => (a.byMonth ? l : `Week of ${l}`)} />
+                        <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: "var(--ink-soft)" }} />
+                        <Line type="monotone" dataKey="satisfied" name="Satisfied" stroke="var(--s1)" strokeWidth={2} dot={{ r: 3, fill: "var(--s1)", stroke: "var(--panel)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
+                        <Line type="monotone" dataKey="recommend" name="Would recommend" stroke="var(--s2)" strokeWidth={2} dot={{ r: 3, fill: "var(--s2)", stroke: "var(--panel)", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h2>By service</h2>
+            <p className="section-note">The share of each service&apos;s ratings, from Very Satisfied (bottom) to Very Dissatisfied (top); N/A is left out. Under each column: % satisfied and responses. Click a column to see only that service.</p>
+            <div className="panel">
+              <AnswerLegend points={pointsOf(a.services[0]?.questions[0]?.column.labels)} />
+              {a.services.length ? (
+                <ServiceColumns points={pointsOf(a.services[0]?.questions[0]?.column.labels)} selected={filters.service}
+                  rows={[...(a.services.length > 1 ? [{ name: "All services", counts: sumCounts(a.services.flatMap((x) => x.questions)), sub: `${pctText(t.csat)} · ${num(t.responses)}` }] : []),
+                    ...a.services.map((x) => ({ name: x.section.name, counts: sumCounts(x.questions), sub: `${pctText(x.csat)} · ${num(x.responses)}` }))]}
+                  onSelect={(name) => setFilters((f) => ({ ...f, service: name === "All services" || f.service === name ? "" : name }))} />
+              ) : <p className="empty-note">No ratings in this period.</p>}
+            </div>
+          </section>
+
+          {compare && (
+            <section>
+              <h2>Monthly results by service</h2>
+              <p className="section-note">Like the CHARTS &amp; TABLE tab: the questions on the left, then each month&apos;s chart with a short analysis under it, compared with the month before. Click a column to see how many patients gave each answer.</p>
+              <div className="filterbar no-print fb-compare-pick">
+                <label>From month<select value={compare.from} onChange={(e) => { setMonthFrom(e.target.value); if (e.target.value > compare.to) setMonthTo(e.target.value); }}>{monthKeys.map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}</select></label>
+                <label>To month<select value={compare.to} onChange={(e) => { setMonthTo(e.target.value); if (e.target.value < compare.from) setMonthFrom(e.target.value); }}>{monthKeys.map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}</select></label>
+                <AnswerLegend points={pointsOf(survey.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels).filter((p) => p.p >= 2 || compare.hasVeryLow)} na />
+              </div>
+              <div className="fb-scroll">
+                <div className="fb-cmp" style={{ gridTemplateColumns: `minmax(220px, 300px) repeat(${compare.months.length}, minmax(330px, 1fr))`, minWidth: 240 + compare.months.length * 340 }}>
+                  <div className="fb-cmp-corner">THSC PATIENT&apos;S FEEDBACKS</div>
+                  {compare.months.map((m) => <div key={m.key} className="fb-cmp-banner">{monthText(m.key, true).split(" ")[0].toUpperCase()} = {num(m.cur.totals.responses)} TOTAL RESPONSE{m.cur.totals.responses === 1 ? "" : "S"}</div>)}
+                  {compare.services.map((name) => {
+                    const section = survey.sections.find((x) => x.name === name);
+                    const questions = section?.ratings ?? [];
+                    const points = pointsOf(questions[0]?.labels).filter((p) => p.p >= 2 || compare.hasVeryLow);
+                    // At least 0–5 on the vertical axis, so one or two answers never look like a full column.
+                    const yMax = Math.max(5, ...compare.months.flatMap((m) => (m.cur.services.find((x) => x.section.name === name)?.questions ?? []).flatMap((q) => [...Object.values(q.counts), q.na])));
+                    return (
+                      <Fragment key={name}>
+                        <div className="fb-cmp-q">
+                          <h3>{name.toUpperCase()}</h3>
+                          <ol>{questions.map((q) => <li key={q.index}>{q.text}</li>)}</ol>
+                        </div>
+                        {compare.months.map((m) => {
+                          const svc = m.cur.services.find((x) => x.section.name === name);
+                          const label = monthText(m.key, true).split(" ")[0].toUpperCase();
+                          return (
+                            <div key={m.key} className="fb-cmp-cell">
+                              <div className="fb-chart-title">{name.toUpperCase()} - {num(svc?.responses ?? 0)} RESPONSE{svc?.responses === 1 ? "" : "S"} ({label})</div>
+                              {svc ? <GroupedQuestions points={points} yMax={yMax} questions={questions.map((c) => svc.questions.find((q) => q.column.index === c.index) ?? { column: c, counts: {}, na: 0 })} />
+                                : <div className="fb-cmp-empty">No responses for this service in {monthText(m.key, true).split(" ")[0]}.</div>}
+                              <div className="fb-interp"><strong>ANALYSIS:</strong><p>{shortNote(m.key, svc, m.prev?.services.find((p) => p.section.name === name), m.prevKey)}</p></div>
+                            </div>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {a.profile.length > 0 && (
+            <section>
+              <h2>Who answered</h2>
+              <p className="section-note">Demographics and how patients found and reached THSC, for the responses in this period.</p>
+              <div className="grid-even fb-profile">
+                {a.profile.filter((p) => p.column !== survey.router).map((p) => (
+                  <div key={p.column.index} className="panel">
+                    <h3>{p.column.text}</h3>
+                    <CountColumns items={p.items} total={p.answered} />
+                    {p.multiple > 0 && <p className="drill-meta">{num(p.multiple)} of {num(p.answered)} chose more than one, so the columns add up to more than {num(p.answered)}.</p>}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="section-head-row">
+              <div><h2>Needs improvement</h2><p className="section-note">Short suggestions from this period&apos;s ratings (Neutral or Dissatisfied answers) and comments (Negative, Suggestion, Experience), most urgent first. Hover over a basis to see the ratings and comments behind it.</p></div>
+              <div className="filterbar no-print fb-comment-filters">
+                <label>Department to tap
+                  <select value={dept} onChange={(e) => setDept(e.target.value)}>
+                    <option value="">All departments ({improvements.length})</option>
+                    {improvements.map((d) => <option key={d.department} value={d.department}>{d.department} · {d.items.length}</option>)}
+                  </select>
+                </label>
+              </div>
+            </div>
+            {improvementRows.length ? (
+              <div className="panel trk-panel">
+                <div className="table-scroll">
+                  <table className="fb-imp-table">
+                    <thead><tr><th>Improvement sentence</th><th>Basis</th><th>Department to tap</th></tr></thead>
+                    <tbody>
+                      {improvementRows.map((it) => (
+                        <tr key={`${it.department}|${it.theme}`}>
+                          <td className="name fb-imp-text">{it.short}</td>
+                          <td className="name fb-imp-basis" title={it.evidence.join("\n")}>{basisText(it)}</td>
+                          <td className="name fb-imp-dept">{it.department}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : <div className="panel"><p className="empty-note">Nothing stands out in this period: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
+          </section>
+
+          <section>
+            <div className="section-head-row">
+              <div><h2>Patients&apos; comments &amp; experiences</h2><p className="section-note">Everything patients wrote, by month, like the COMMENTS tab. Each card&apos;s type is a first guess from its words: change it with the menu on the card and it is saved for the whole team.</p></div>
+              <div className="filterbar no-print fb-comment-filters">
+                <label className="trk-search">Search<span><Search size={15} aria-hidden /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Word in the comment" /></span></label>
+              </div>
+            </div>
+            <div className="fb-legend-board no-print" role="group" aria-label="Show comment types">
+              <span>LEGEND</span>
+              {COMMENT_TYPES.map((ct) => (
+                <button key={ct.id} type="button" aria-pressed={!hidden.has(ct.id)} className={hidden.has(ct.id) ? "off" : undefined} style={{ background: ct.color }}
+                  onClick={() => setHidden((h) => { const n = new Set(h); if (n.has(ct.id)) n.delete(ct.id); else n.add(ct.id); return n; })}>
+                  {ct.label.toUpperCase()} · {board.counts[ct.id]}
+                </button>
+              ))}
+            </div>
+            {tagNote && <p className="drill-meta" role="status">{tagNote}</p>}
+            {board.columns.length ? (
+              <div className="fb-board">
+                {board.columns.map((col) => (
+                  <div key={col.month} className="fb-board-col">
+                    <h3>{monthText(col.month, true).split(" ")[0].toUpperCase()}<small>{monthText(col.month, true).split(" ")[1]} · {col.items.length}</small></h3>
+                    {col.items.map((c) => (
+                      <div key={c.key} className="fb-card" style={{ background: COMMENT_TYPES.find((ct) => ct.id === c.type)!.color }}>
+                        <p>{c.text}</p>
+                        <div className="fb-card-meta">
+                          <span>{c.service} · {dayText(c.response.visit, { month: "short", day: "numeric" })}{c.low ? " · low rating" : ""}</span>
+                          <select aria-label="Comment type" value={c.type} disabled={!saveTag || savingKey === c.key} onChange={(e) => void changeType(c.key, e.target.value as CommentType)}>
+                            {COMMENT_TYPES.map((ct) => <option key={ct.id} value={ct.id}>{ct.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                    {!col.items.length && <p className="empty-note">No comments.</p>}
+                  </div>
+                ))}
+              </div>
+            ) : <div className="panel"><p className="empty-note">No comments match.</p></div>}
+          </section>
+
+          <footer className="source">
+            Live from the Google Sheet &ldquo;{sheet!.title}&rdquo; ({tabsText}), read every 2 minutes while this tab is open. Period = {survey.visit ? <>&ldquo;{survey.visit.header}&rdquo;</> : "the form's timestamp"}; service = {survey.router ? <>&ldquo;{survey.router.text}&rdquo;</> : "each block of questions"}; {survey.sections.reduce((n, s) => n + s.ratings.length, 0)} rating questions in {survey.sections.length} service blocks. Satisfied = Very Satisfied or Satisfied; N/A answers are not counted.
+            {survey.hidden.length > 0 && <> Personal details ({survey.hidden.map((c) => c.text).join(", ")}) are never shown.</>}
+          </footer>
+        </>
+      )}
+    </>
+  );
+}
+
+type Point = { p: number; label: string };
+const sumCounts = (questions: { counts: Record<number, number> }[]) => {
+  const out: Record<number, number> = {};
+  questions.forEach((q) => Object.entries(q.counts).forEach(([p, n]) => { out[Number(p)] = (out[Number(p)] || 0) + n; }));
+  return out;
+};
+
+function AnswerLegend({ points, na }: { points: Point[]; na?: boolean }) {
+  return <div className="mix-legend fb-legend">{points.map((p) => <span key={p.p}><i style={{ background: POINT_COLOR[p.p] }} />{p.label}</span>)}{na && <span><i style={{ background: NA_COLOR }} />N/A</span>}</div>;
+}
+
+/** Splits a category name into short lines for the axis under a column. */
+function wrap(text: string, max: number, lines = 3) {
+  const out: string[] = [];
+  let line = "";
+  text.split(/\s+/).forEach((word) => {
+    if ((line ? `${line} ${word}` : word).length > max && line) { out.push(line); line = word; } else line = line ? `${line} ${word}` : word;
+  });
+  if (line) out.push(line);
+  return out.length > lines ? [...out.slice(0, lines - 1), `${out.slice(lines - 1).join(" ").slice(0, max - 1)}…`] : out;
+}
+/** An axis label under each column: the name on up to three lines, and an optional bold line below it. */
+function columnTick(max: number, subOf?: (name: string) => string | undefined, selected?: string) {
+  return function Tick({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { value?: string } }) {
+    const name = String(payload?.value ?? ""), sub = subOf?.(name), lines = wrap(name, max);
+    return (
+      <g transform={`translate(${Number(x)},${Number(y)})`}>
+        <text textAnchor="middle" fill={name === selected ? "var(--ink)" : "var(--ink-soft)"} fontSize={11} fontWeight={name === selected ? 700 : 400}>
+          {lines.map((l, i) => <tspan key={i} x={0} dy={i ? 13 : 12}>{l}</tspan>)}
+          {sub && <tspan x={0} dy={15} fill="var(--ink)" fontWeight={700} fontFamily="var(--font-mono-stack)">{sub}</tspan>}
+        </text>
+      </g>
+    );
+  };
+}
+type TipItem = { dataKey?: unknown; value?: unknown; payload?: Record<string, unknown> };
+/** Tooltip listing every answer, best first, with patients (or ratings) and the share. */
+function AnswerTip({ active, payload, points, title, unit }: { active?: boolean; payload?: TipItem[]; points: Point[]; title: (row: Record<string, unknown>) => string; unit: string }) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  const counts = points.map((p) => ({ ...p, n: Number(row[`c${p.p}`] || 0) }));
+  const sum = counts.reduce((s, c) => s + c.n, 0);
+  return (
+    <div className="fb-tip">
+      <strong>{title(row)}</strong>
+      {counts.map((c) => <div key={c.p}><i style={{ background: POINT_COLOR[c.p] }} />{c.label}<b>{c.n} {c.n === 1 ? unit.replace(/s$/, "") : unit} · {sum ? Math.round((c.n / sum) * 100) : 0}%</b></div>)}
+      {Number(row.na) > 0 && <div className="muted">N/A<b>{String(row.na)}</b></div>}
+    </div>
+  );
+}
+type ChartState = { activeTooltipIndex?: number | string | null; activeLabel?: string | number } | null | undefined;
+
+/** Services as 100% stacked columns, Very Satisfied at the bottom. */
+function ServiceColumns({ rows, points, selected, onSelect, height = 360, colWidth = 92 }: { rows: { name: string; counts: Record<number, number>; sub: string }[]; points: Point[]; selected: string; onSelect?: (name: string) => void; height?: number; colWidth?: number }) {
+  const data = rows.map((r) => {
+    const sum = points.reduce((s, p) => s + (r.counts[p.p] || 0), 0) || 1;
+    return { name: r.name, sub: r.sub, ...Object.fromEntries(points.flatMap((p) => [[`p${p.p}`, ((r.counts[p.p] || 0) / sum) * 100], [`c${p.p}`, r.counts[p.p] || 0]])) };
+  });
+  const subs = new Map(rows.map((r) => [r.name, r.sub]));
+  return (
+    <div className="fb-scroll">
+      <div className={`chart-box${onSelect ? " fb-columns" : ""}`} style={{ minWidth: rows.length * colWidth, height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="22%"
+            onClick={(state: ChartState) => { const i = Number(state?.activeTooltipIndex); if (onSelect && Number.isInteger(i) && data[i]) onSelect(data[i].name); }}>
+            <CartesianGrid vertical={false} stroke="var(--line)" />
+            <XAxis dataKey="name" interval={0} height={74} tickLine={false} axisLine={{ stroke: "var(--line)" }} tick={columnTick(13, (n) => subs.get(n), selected)} />
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} width={40} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} />
+            <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} content={<AnswerTip points={points} unit="ratings" title={(r) => `${r.name} · ${r.sub} responses`} />} />
+            {[...points].map((p, i, list) => <Bar key={p.p} dataKey={`p${p.p}`} stackId="a" fill={POINT_COLOR[p.p]} isAnimationActive={false} cursor={onSelect ? "pointer" : undefined} radius={i === list.length - 1 ? [3, 3, 0, 0] : 0} />)}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+const NA_COLOR = "#7f7f7f";
+/** One service's questions in one month as grouped columns (one per answer), like the charts in the CHARTS & TABLE tab. */
+function GroupedQuestions({ questions, points, yMax }: { questions: { column: { text: string }; counts: Record<number, number>; na: number }[]; points: Point[]; yMax?: number }) {
+  const data = questions.map((q) => ({ label: q.column.text.length > 16 ? `${q.column.text.slice(0, 15)}…` : q.column.text, text: q.column.text, na: q.na, NA: q.na, ...Object.fromEntries(points.map((p) => [`c${p.p}`, q.counts[p.p] || 0])) }));
+  return (
+    <div className="chart-box" style={{ height: 300 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 24 }} barCategoryGap="16%" barGap={1}>
+          <CartesianGrid vertical={false} stroke="var(--line)" />
+          <XAxis dataKey="label" interval={0} angle={-35} textAnchor="end" height={78} tick={{ ...axisTick, fontFamily: "var(--font-sans-stack)", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "var(--line)" }} />
+          <YAxis tick={axisTick} tickLine={false} axisLine={false} width={28} allowDecimals={false} domain={[0, yMax ?? "auto"]} ticks={yMax && yMax <= 10 ? Array.from({ length: yMax + 1 }, (_, i) => i) : undefined} />
+          {/* The counts pop up when a column is clicked (or tapped). */}
+          <Tooltip trigger="click" cursor={{ fill: "var(--line)", opacity: 0.35 }} wrapperStyle={{ maxWidth: 320, zIndex: 5 }} content={<AnswerTip points={points} unit="patients" title={(r) => String(r.text)} />} />
+          {points.map((p) => <Bar key={p.p} dataKey={`c${p.p}`} fill={POINT_COLOR[p.p]} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} cursor="pointer" />)}
+          <Bar dataKey="NA" fill={NA_COLOR} isAnimationActive={false} maxBarSize={14} radius={[2, 2, 0, 0]} cursor="pointer" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Plain columns for a choice question (gender, age …), each labelled with its count. Ranges such as ages keep their
+ * natural order; beyond the eight biggest answers the rest are combined as "Other". */
+function CountColumns({ items: all, total }: { items: { name: string; value: number }[]; total: number }) {
+  const ranges = all.every((i) => /^\d/.test(i.name));
+  const sorted = ranges ? [...all].sort((x, y) => parseFloat(x.name) - parseFloat(y.name)) : all;
+  const items = sorted.length > 8 ? [...sorted.slice(0, 7), { name: `Other (${sorted.length - 7} kinds)`, value: sorted.slice(7).reduce((n, i) => n + i.value, 0) }] : sorted;
+  return (
+    <div className="fb-scroll">
+      <div className="chart-box" style={{ minWidth: items.length * 64, height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={items} margin={{ top: 20, right: 4, bottom: 0, left: 0 }} barCategoryGap="20%">
+            <CartesianGrid vertical={false} stroke="var(--line)" />
+            <XAxis dataKey="name" interval={0} height={60} tickLine={false} axisLine={{ stroke: "var(--line)" }} tick={columnTick(items.length > 4 ? 10 : 16)} />
+            <YAxis tick={axisTick} tickLine={false} axisLine={false} width={32} allowDecimals={false} />
+            <Tooltip cursor={{ fill: "var(--line)", opacity: 0.35 }} contentStyle={tooltipStyle} labelStyle={{ fontWeight: 600 }} formatter={(v) => [`${num(Number(v))} (${pctText(Number(v) / total)})`, "Patients"]} />
+            <Bar dataKey="value" fill="var(--s2)" radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false} label={{ position: "top", fill: "var(--ink)", fontSize: 11, fontFamily: "var(--font-mono-stack)" }} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Monthly Summary: one month next to the month before, short and easy to read.
+
+const pointsFor = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) => ({ p, label: labels?.[p] ?? String(p) }));
+const shortMonth = (key: string) => monthText(key, true).split(" ")[0];
+
+/** A figure for this month next to last month's, with the change: up is better for every figure here. */
+function CompareCard({ label, cur, prev, percent, prevLabel, accent, neutral }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string; accent?: boolean; neutral?: boolean }) {
+  const show = (v: number | null) => (v === null ? "—" : percent ? pctText(v, 1) : num(v));
+  const change = cur !== null && prev !== null ? (percent ? (cur - prev) * 100 : cur - prev) : null;
+  const tone = change === null || Math.abs(change) < (percent ? 0.05 : 0.5) ? "same" : change > 0 ? "up" : "down";
+  return (
+    <div className={`kpi fb-cmp-kpi${accent ? " accent" : ""}`}>
+      <div className="label">{label}</div>
+      <div className="value">{show(cur)}</div>
+      <div className={`fb-change ${neutral ? "same" : tone}`}>
+        {change === null ? "No earlier month to compare" : tone === "same" ? "Same as " : `${tone === "up" ? "▲" : "▼"} ${percent ? `${Math.abs(change).toFixed(1)} pts` : num(Math.abs(change))} vs `}
+        {change !== null && <>{prevLabel} ({show(prev)})</>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Monthly Summary sub-section: for the chosen survey and month, the main figures, each service's ratings
+ * (the By service chart) and the top improvements, all next to the month before.
+ */
+export function FeedbackMonthlySummary({ sources, loadTags }: {
+  sources: { id: string; name: string; load: (fresh: boolean) => Promise<FeedbackSheet> }[];
+  loadTags?: () => Promise<{ tags: Record<string, CommentType>; missing: boolean }>;
+}) {
+  const [sourceId, setSourceId] = useState(sources[0].id);
+  const source = sources.find((x) => x.id === sourceId) ?? sources[0];
+  const [sheet, setSheet] = useState<FeedbackSheet | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [month, setMonth] = useState<string | null>(null);
+  const [tags, setTags] = useState<Record<string, CommentType>>({});
+
+  const refresh = useCallback(async (fresh: boolean) => {
+    setLoading(true);
+    try { setSheet(await source.load(fresh)); setError(""); } catch (e) { setError((e as Error).message); }
+    if (loadTags) { try { setTags((await loadTags()).tags); } catch { /* the guesses are used */ } }
+    setLoading(false);
+  }, [source, loadTags]);
+  useEffect(() => {
+    const first = setTimeout(() => void refresh(false), 0);
+    const poll = setInterval(() => { if (document.visibilityState === "visible") void refresh(false); }, POLL_MS);
+    return () => { clearTimeout(first); clearInterval(poll); };
+  }, [refresh]);
+
+  const survey = useMemo(() => (sheet?.status === "ok" ? buildSurvey(sheet.headers, sheet.rows, sheet.firstRow, sheet.where) : null), [sheet]);
+  const months = useMemo(() => Array.from(new Set((survey?.responses || []).map((r) => r.visit?.slice(0, 7)).filter((m): m is string => Boolean(m)))).sort(), [survey]);
+  const current = month && months.includes(month) ? month : months.at(-1) ?? null;
+  const data = useMemo(() => {
+    if (!survey || !current) return null;
+    const range = (key: string) => { const [y, m] = key.split("-").map(Number); return { from: `${key}-01`, to: day(new Date(y, m, 0).getTime()), service: "" }; };
+    const [y, m] = current.split("-").map(Number);
+    const prevKey = day(new Date(y, m - 2, 1).getTime()).slice(0, 7);
+    const cur = analyzeFeedback(survey, range(current)), prev = analyzeFeedback(survey, range(prevKey));
+    const typeOf = (c: FeedbackSummary["comments"][number]) => tags[commentKey(source.id, c.response.visit, c.text)] ?? guessCommentType(c.text, c.kind === "Previous experience");
+    const improvements = suggestImprovements(survey, cur, typeOf).flatMap((d) => d.items).sort((a2, b2) => b2.score - a2.score).slice(0, 3);
+    return { cur, prev: prev.totals.responses ? prev : null, prevKey, improvements };
+  }, [survey, current, tags, source.id]);
+
+  const labels = survey?.sections.find((x) => x.ratings[0]?.labels)?.ratings[0]?.labels;
+  const cur = data?.cur, prev = data?.prev;
+  const prevName = data ? shortMonth(data.prevKey) : "";
+  // One service order for both months (this month's biggest first), so the two charts line up.
+  const serviceNames = cur ? Array.from(new Set([...cur.services.map((x) => x.section.name), ...(prev?.services.map((x) => x.section.name) ?? [])])) : [];
+  const rows = (a: FeedbackSummary) => [
+    ...(a.services.length > 1 ? [{ name: "All services", counts: sumCounts(a.services.flatMap((x) => x.questions)), sub: `${pctText(a.totals.csat)} · ${num(a.totals.responses)}` }] : []),
+    ...[...a.services].sort((x, y) => serviceNames.indexOf(x.section.name) - serviceNames.indexOf(y.section.name)).map((x) => ({ name: x.section.name, counts: sumCounts(x.questions), sub: `${pctText(x.csat)} · ${num(x.responses)}` })),
+  ];
+
+  return (
+    <>
+      <header className="top">
+        <div>
+          <h1>Patient Feedback: Monthly Summary</h1>
+          <p className="sub">One month at a glance, next to the month before: the main figures, each service&apos;s ratings and what to improve</p>
+          <div className="crm-actions no-print">
+            <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
+          </div>
+        </div>
+        <div className="period">
+          {current ? <>Month<br /><strong>{monthText(current, true)}</strong><div className="filters-note">compared with {data?.prevKey ? monthText(data.prevKey, true) : "—"}</div></> : <>Month<br /><strong>—</strong></>}
+        </div>
+      </header>
+
+      <div className="filterbar no-print">
+        <label>Survey
+          <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setMonth(null); setSheet(null); }}>
+            {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
+        <label>Month
+          <select value={current ?? ""} onChange={(e) => setMonth(e.target.value)} disabled={!months.length}>
+            {[...months].reverse().map((m) => <option key={m} value={m}>{monthText(m, true)}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {error && <div className="alert" role="alert"><AlertCircle size={18} /><div><strong>Could not load the responses.</strong> {error}</div></div>}
+      {sheet && sheet.status !== "ok" && <div className="alert" role="alert"><AlertCircle size={18} /><div>{sheet.message}</div></div>}
+      {!sheet && loading && <p className="empty-note" role="status">Reading the feedback sheet…</p>}
+      {survey && !months.length && <div className="panel"><p className="empty-note">No dated responses yet.</p></div>}
+
+      {cur && data && (
+        <>
+          <div className="kpis">
+            <CompareCard label="Responses" cur={cur.totals.responses} prev={prev?.totals.responses ?? null} prevLabel={prevName} />
+            <CompareCard label="Satisfied" cur={cur.totals.csat} prev={prev?.totals.csat ?? null} prevLabel={prevName} percent accent />
+            <CompareCard label="Very satisfied" cur={cur.totals.verySatisfied} prev={prev?.totals.verySatisfied ?? null} prevLabel={prevName} percent />
+            <CompareCard label="Would recommend" cur={cur.totals.recommend} prev={prev?.totals.recommend ?? null} prevLabel={prevName} percent />
+            <CompareCard label="Comments" cur={cur.comments.length} prev={prev?.comments.length ?? null} prevLabel={prevName} neutral />
+          </div>
+
+          <section>
+            <h2>By service: {prevName} vs {shortMonth(current!)}</h2>
+            <p className="section-note">Each service&apos;s ratings from Very Satisfied (bottom) to Very Dissatisfied (top), N/A left out. Under each column: % satisfied and responses. Hover a column for the numbers.</p>
+            <AnswerLegend points={pointsFor(labels)} />
+            <div className="fb-sum-charts">
+              <div className="panel">
+                <h3>{monthText(data.prevKey, true).toUpperCase()}{prev ? ` = ${num(prev.totals.responses)} RESPONSES` : ""}</h3>
+                {prev && prev.services.length ? <ServiceColumns rows={rows(prev)} points={pointsFor(labels)} selected="" height={300} colWidth={70} /> : <p className="empty-note">No responses in {prevName}.</p>}
+              </div>
+              <div className="panel fb-sum-current">
+                <h3>{monthText(current!, true).toUpperCase()} = {num(cur.totals.responses)} RESPONSES</h3>
+                {cur.services.length ? <ServiceColumns rows={rows(cur)} points={pointsFor(labels)} selected="" height={300} colWidth={70} /> : <p className="empty-note">No ratings in {shortMonth(current!)}.</p>}
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>What changed</h2>
+            <div className="panel trk-panel">
+              <div className="table-scroll">
+                <table className="fb-sum-table">
+                  <thead><tr><th>Service</th><th className="num">{prevName}</th><th className="num">{shortMonth(current!)}</th><th className="num">Change</th></tr></thead>
+                  <tbody>
+                    {serviceNames.map((name) => {
+                      const c = cur.services.find((x) => x.section.name === name), p = prev?.services.find((x) => x.section.name === name);
+                      const change = c?.csat != null && p?.csat != null ? (c.csat - p.csat) * 100 : null;
+                      return (
+                        <tr key={name}>
+                          <td className="name">{name}</td>
+                          <td className="num">{p ? `${pctText(p.csat)} · ${num(p.responses)}` : "—"}</td>
+                          <td className="num strong">{c ? `${pctText(c.csat)} · ${num(c.responses)}` : "—"}</td>
+                          <td className={`num fb-change ${change === null || Math.abs(change) < 0.5 ? "same" : change > 0 ? "up" : "down"}`}>{change === null ? (c && !p ? "new" : "—") : Math.abs(change) < 0.5 ? "same" : `${change > 0 ? "▲" : "▼"} ${Math.abs(change).toFixed(0)} pts`}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p className="drill-meta">% satisfied (Very Satisfied or Satisfied) · responses. Few responses can swing a percentage a lot.</p>
+          </section>
+
+          <section>
+            <h2>Top things to improve in {shortMonth(current!)}</h2>
+            {data.improvements.length ? (
+              <div className="panel trk-panel">
+                <div className="table-scroll">
+                  <table className="fb-imp-table">
+                    <thead><tr><th>Improvement sentence</th><th>Basis</th><th>Department to tap</th></tr></thead>
+                    <tbody>{data.improvements.map((it) => <tr key={`${it.department}|${it.theme}`}><td className="name fb-imp-text">{it.short}</td><td className="name fb-imp-basis" title={it.evidence.join("\n")}>{basisText(it)}</td><td className="name fb-imp-dept">{it.department}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : <div className="panel"><p className="empty-note">Nothing stands out this month: no Neutral or Dissatisfied ratings and no negative comments.</p></div>}
+          </section>
+        </>
+      )}
+    </>
+  );
+}

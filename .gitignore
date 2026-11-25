@@ -17,3 +17,5 @@
 
 # TypeScript
 *.tsbuildinfo
+
+!.env.example

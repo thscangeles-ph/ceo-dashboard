@@ -9,10 +9,10 @@ import { RegisterServiceWorker } from "@/components/pwa";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "THSC CEO Dashboard",
-  description: "Upload THSC Excel reports to generate the CEO summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
+  title: "THSC Summary Dashboard",
+  description: "Upload THSC Excel reports to generate the summary dashboard: revenue, patients, sources, service mix, referring physicians, and decisions for leadership.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "CEO Dashboard", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Summary Dashboard", statusBarStyle: "black-translucent" },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -24,10 +24,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#12233d" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f1720" },
-  ],
+  themeColor: "#161411",
+  colorScheme: "light",
 };
 
 export default function RootLayout({

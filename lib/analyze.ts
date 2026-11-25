@@ -1,5 +1,6 @@
 import type { InquiryRow, SalesRow } from "./parse";
 import { normalize } from "./parse";
+import { needsFollowUp } from "./lead";
 
 export const peso = (value: number) => `₱${Math.round(value).toLocaleString("en-PH")}`;
 export const count = (value: number) => value.toLocaleString("en-PH");
@@ -9,21 +10,61 @@ export const longDate = (date: Date) => date.toLocaleDateString("en-PH", { month
 const dayKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const weekday = (date: Date) => date.toLocaleDateString("en-PH", { weekday: "long" });
 
-export type PatientTypeFilter = "new" | "cash" | "hmo" | "all";
+/** How a raw Patient Type value from the sales report is grouped. */
+export type TypeGroup = "new" | "scheduled" | "walkin" | "hmo" | "returning" | "home" | "sendin" | "trial" | "other";
+export function typeGroup(raw: string): TypeGroup {
+  const t = normalize(raw).replace(/[\s_-]+/g, " ");
+  if (/^(NEW|HMO ?\/? ?NEW|NEW ?\/? ?HMO)$/.test(t)) return "new";
+  if (/SCHED/.test(t)) return "scheduled";
+  if (/WALK ?IN/.test(t)) return "walkin";
+  if (/^HMO\b/.test(t)) return "hmo";
+  if (/HOME/.test(t)) return "home";
+  if (/SEND ?IN/.test(t)) return "sendin";
+  if (/CLINICAL|TRIAL/.test(t)) return "trial";
+  if (/RETURN|OLD|FOLLOW/.test(t)) return "returning";
+  return "other";
+}
+const RETURNING: TypeGroup[] = ["scheduled", "walkin", "hmo", "returning"];
+
+/** The patient types the dashboard can be filtered to, in display order. */
+export const PATIENT_TYPES = [
+  { key: "all", label: "All patient types", short: "All", groups: null },
+  { key: "new", label: "NEW (NEW + HMO/NEW)", short: "NEW", groups: ["new"] },
+  { key: "returning", label: "Returning patients (Scheduled + Walk-in + HMO)", short: "Returning", groups: RETURNING },
+  { key: "scheduled", label: "Scheduled (returning)", short: "Scheduled", groups: ["scheduled"] },
+  { key: "walkin", label: "Walk-in (returning)", short: "Walk-in", groups: ["walkin"] },
+  { key: "home", label: "Home service", short: "Home service", groups: ["home"] },
+  { key: "sendin", label: "Send-in", short: "Send-in", groups: ["sendin"] },
+  { key: "trial", label: "Clinical trial", short: "Clinical trial", groups: ["trial"] },
+] as const satisfies readonly { key: string; label: string; short: string; groups: readonly TypeGroup[] | null }[];
+export type PatientTypeFilter = (typeof PATIENT_TYPES)[number]["key"];
+export const patientTypeInfo = (key: PatientTypeFilter) => PATIENT_TYPES.find((t) => t.key === key)!;
+export const matchesType = (key: PatientTypeFilter, raw: string) => {
+  const groups = patientTypeInfo(key).groups as readonly TypeGroup[] | null;
+  return !groups || groups.includes(typeGroup(raw));
+};
 export type StatusFilter = "paid" | "all";
 export type Filters = { patientType: PatientTypeFilter; status: StatusFilter; from: string; to: string };
 
-export const isNewType = (type: string) => /^(NEW|HMO ?\/? ?NEW)$/.test(type);
+/** Type rows of the "patients by type" table; HMO stays its own line inside Returning. */
+const TYPE_ROWS: { key: TypeGroup; label: string; returning?: boolean }[] = [
+  { key: "new", label: "NEW (incl. HMO/NEW)" },
+  { key: "scheduled", label: "Scheduled", returning: true },
+  { key: "walkin", label: "Walk-in", returning: true },
+  { key: "hmo", label: "HMO", returning: true },
+  { key: "returning", label: "Other returning", returning: true },
+  { key: "home", label: "Home service" },
+  { key: "sendin", label: "Send-in" },
+  { key: "trial", label: "Clinical trial" },
+  { key: "other", label: "Other / not recorded" },
+];
 export const isPaid = (status: string) => /PAID|COMPLETE|POSTED|SETTLED/.test(status) && !/UNPAID|NOT PAID|CANCEL|VOID|REFUND/.test(status);
 
 export function applyFilters(rows: SalesRow[], filters: Filters) {
   const from = filters.from ? new Date(`${filters.from}T00:00:00`) : null;
   const to = filters.to ? new Date(`${filters.to}T23:59:59`) : null;
   return rows.filter((row) => {
-    const type = row.patientType;
-    if (filters.patientType === "new" && !isNewType(type)) return false;
-    if (filters.patientType === "cash" && type !== "NEW") return false;
-    if (filters.patientType === "hmo" && !(isNewType(type) && type !== "NEW")) return false;
+    if (!matchesType(filters.patientType, row.patientType)) return false;
     if (filters.status === "paid" && !isPaid(row.status)) return false;
     if (from && row.date && row.date < from) return false;
     if (to && row.date && row.date > to) return false;
@@ -38,13 +79,13 @@ export const SOURCE_GROUPS = [
   { key: "digital", label: "Digital (Google, Facebook, website)", color: "var(--s3)" },
   { key: "walk", label: "Walk-by", color: "var(--s4)" },
   { key: "other", label: "Other sources", color: "var(--neutral)" },
-  { key: "none", label: "No source recorded", color: "var(--neutral-soft)" },
 ] as const;
-export type SourceGroupKey = (typeof SOURCE_GROUPS)[number]["key"];
+/** "none" (blank or N/A, as on every returning patient) is never charted. */
+export type SourceGroupKey = (typeof SOURCE_GROUPS)[number]["key"] | "none";
 
 export function sourceGroup(source: string): SourceGroupKey {
   const s = normalize(source);
-  if (!s || /^(N\/?A|NONE|-+|NOT SPECIFIED|UNKNOWN)$/.test(s)) return "none";
+  if (!s || isNa(s)) return "none";
   if (/FAMIL|RELATIVE|FRIEND|WORD|NEIGHBO|CO-?WORKER|COLLEAGUE|SPOUSE|PATIENT REFERRAL|KAKILALA/.test(s)) return "word";
   if (/DOCTOR|\bDRA?\b|PHYSICIAN|REFER|\bMD\b|\bOB\b|CARDIO/.test(s)) return "doctor";
   if (/GOOGLE|FACEBOOK|\bFB\b|WEB|ONLINE|INTERNET|SOCIAL|INSTAGRAM|TIKTOK|YOUTUBE|MESSENGER|VIBER|SEARCH|\bADS?\b|EMAIL|\bSMS\b/.test(s)) return "digital";
@@ -54,7 +95,11 @@ export function sourceGroup(source: string): SourceGroupKey {
 const DIGITAL_LABEL = "Google, Facebook or the website";
 
 type Tone = "risk" | "watch" | "ok";
-export type Finding = { tone: Tone; label: string; value: string; text: string };
+/** What the details panel shows when a chart element, row or card is clicked. */
+export type Drill =
+  | { kind: "sales"; title: string; subtitle?: string; rows: SalesRow[] }
+  | { kind: "inquiries"; title: string; subtitle?: string; rows: InquiryRow[] };
+export type Finding = { tone: Tone; label: string; value: string; text: string; drill?: () => Drill };
 export type Decision = { decision: string; why: string; measure: string };
 
 const median = (values: number[]) => {
@@ -63,6 +108,8 @@ const median = (values: number[]) => {
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
+const physicianKey = (name: string) => normalize(name).replace(/[^A-Z ]/g, "").replace(/\b(DR|DRA|MD)\b/g, "").replace(/\s+/g, " ").trim();
+const isNa = (value: string) => /^(N\/?A|NONE|-+|NOT SPECIFIED|UNKNOWN|NOT APPLICABLE)$/.test(normalize(value));
 const listNames = (names: string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 const surname = (name: string) => {
   const parts = name.replace(/,?\s*(MD|M\.D\.|FPCP|FPCC|FPHA|DPBA)\b\.?/gi, "").replace(/^(DR\.?|DRA\.?)\s+/i, "").replace(/\b[A-Z]\.\s*/g, "").trim().split(/\s+/);
@@ -70,13 +117,12 @@ const surname = (name: string) => {
 };
 
 export function analyzeSales(rows: SalesRow[]) {
-  const patients = new Map<string, { source: string; revenue: number; category: string }>();
+  const patients = new Map<string, { revenue: number; category: string }>();
   const visits = new Set<string>();
   let revenue = 0, gross = 0, discount = 0;
   const dates: number[] = [];
   for (const row of rows) {
-    const p = patients.get(row.patient) || { source: "", revenue: 0, category: "" };
-    if (!p.source && row.source) p.source = row.source;
+    const p = patients.get(row.patient) || { revenue: 0, category: "" };
     if (!p.category && row.category) p.category = row.category;
     p.revenue += row.revenue;
     patients.set(row.patient, p);
@@ -88,18 +134,34 @@ export function analyzeSales(rows: SalesRow[]) {
   const maxDate = dates.length ? new Date(Math.max(...dates)) : null;
   const perPatient = Array.from(patients.values()).map((p) => p.revenue);
 
-  // Sources: every patient is credited to the first source recorded for them, with all of their revenue.
+  // Sources are only recorded for NEW patients (NEW and HMO/NEW); returning patients carry N/A.
+  // Every new patient is credited to the first source recorded for them, with all of their revenue.
+  const hasTypeColumn = rows.some((r) => r.patientType);
+  // In visit order (row key for same-time visits), so the first source is the same however the rows were loaded.
+  const sourceRows = (hasTypeColumn ? rows.filter((r) => typeGroup(r.patientType) === "new") : [...rows])
+    .sort((x, y) => (x.date?.getTime() || 0) - (y.date?.getTime() || 0) || (x.rowKey < y.rowKey ? -1 : x.rowKey > y.rowKey ? 1 : 0));
+  const sourcePatients = new Map<string, { source: string; revenue: number }>();
+  for (const row of sourceRows) {
+    const p = sourcePatients.get(row.patient) || { source: "", revenue: 0 };
+    if (!p.source && sourceGroup(row.source) !== "none") p.source = row.source;
+    p.revenue += row.revenue;
+    sourcePatients.set(row.patient, p);
+  }
+  const patientSource = new Map<string, string>();
   const sourceMap = new Map<string, { patients: number; revenue: number }>();
   const groupMap = new Map<SourceGroupKey, { patients: number; revenue: number }>();
-  patients.forEach((p) => {
-    const label = p.source || "No source recorded";
-    const s = sourceMap.get(label) || { patients: 0, revenue: 0 };
-    s.patients += 1; s.revenue += p.revenue; sourceMap.set(label, s);
+  let sourcedRevenue = 0;
+  sourcePatients.forEach((p, name) => {
+    if (!p.source) return; // blank or N/A
+    patientSource.set(name, p.source);
+    const s = sourceMap.get(p.source) || { patients: 0, revenue: 0 };
+    s.patients += 1; s.revenue += p.revenue; sourceMap.set(p.source, s);
     const key = sourceGroup(p.source);
     const g = groupMap.get(key) || { patients: 0, revenue: 0 };
     g.patients += 1; g.revenue += p.revenue; groupMap.set(key, g);
+    sourcedRevenue += p.revenue;
   });
-  const sources = Array.from(sourceMap, ([source, v]) => ({ source, ...v, avg: v.revenue / v.patients, group: sourceGroup(source === "No source recorded" ? "" : source) })).sort((a, b) => b.revenue - a.revenue);
+  const sources = Array.from(sourceMap, ([source, v]) => ({ source, ...v, avg: v.revenue / v.patients, group: sourceGroup(source) })).sort((a, b) => b.revenue - a.revenue);
   const groups = SOURCE_GROUPS.map((g) => ({ ...g, ...(groupMap.get(g.key) || { patients: 0, revenue: 0 }) })).filter((g) => g.patients > 0);
 
   // Daily volume.
@@ -141,21 +203,55 @@ export function analyzeSales(rows: SalesRow[]) {
     else otherDiscount += row.discount;
   }
 
-  // Referring physicians. When sources are recorded, only doctor-referral patients count.
+  // Referring physicians. When sources are recorded, only new patients referred by a doctor count.
   const referralPatients = new Set<string>();
-  patients.forEach((p, name) => { if (sourceGroup(p.source) === "doctor") referralPatients.add(name); });
+  patientSource.forEach((source, name) => { if (sourceGroup(source) === "doctor") referralPatients.add(name); });
+  const physicianRows = (referralPatients.size ? sourceRows.filter((r) => referralPatients.has(r.patient)) : rows).filter((r) => physicianKey(r.physician));
   const physicianMap = new Map<string, { name: string; patients: Set<string>; revenue: number }>();
-  for (const row of rows) {
-    if (!row.physician) continue;
-    if (referralPatients.size && !referralPatients.has(row.patient)) continue;
-    const key = normalize(row.physician).replace(/[^A-Z ]/g, "").replace(/\b(DR|DRA|MD)\b/g, "").replace(/\s+/g, " ").trim();
-    if (!key) continue;
+  for (const row of physicianRows) {
+    const key = physicianKey(row.physician);
     const ph = physicianMap.get(key) || { name: row.physician, patients: new Set<string>(), revenue: 0 };
     ph.patients.add(row.patient); ph.revenue += row.revenue; physicianMap.set(key, ph);
   }
   const physicians = Array.from(physicianMap.values()).map((p) => ({ name: p.name, patients: p.patients.size, revenue: p.revenue })).sort((a, b) => b.revenue - a.revenue);
 
+  // Patient-type mix. A patient seen as two types in the period counts once in each.
+  const typeMap = new Map<TypeGroup, { patients: Set<string>; visits: Set<string>; revenue: number }>();
+  for (const row of rows) {
+    const key = typeGroup(row.patientType);
+    const t = typeMap.get(key) || { patients: new Set<string>(), visits: new Set<string>(), revenue: 0 };
+    t.patients.add(row.patient); t.visits.add(row.transaction || `${row.patient}|${row.date ? dayKey(row.date) : ""}`); t.revenue += row.revenue;
+    typeMap.set(key, t);
+  }
+  const types = TYPE_ROWS.map((t) => {
+    const v = typeMap.get(t.key);
+    return { ...t, patients: v?.patients.size || 0, visits: v?.visits.size || 0, revenue: v?.revenue || 0 };
+  }).filter((t) => t.patients > 0);
+  const returningPatients = new Set<string>();
+  let returningRevenue = 0;
+  RETURNING.forEach((key) => { const v = typeMap.get(key); if (v) { v.patients.forEach((name) => returningPatients.add(name)); returningRevenue += v.revenue; } });
+
+  const visitKey = (row: SalesRow) => row.transaction || `${row.patient}|${row.date ? dayKey(row.date) : ""}`;
+  const topServices = new Set(services.filter((x) => x.name !== "OTHER").map((x) => x.name));
+  const serviceOf = (row: SalesRow) => (hasServiceLine ? row.serviceLine : row.service.toUpperCase()) || "UNCLASSIFIED";
+  /** The exact rows behind each number on the dashboard, for the click-through details panel. */
+  const rowsFor = {
+    all: () => rows,
+    type: (key: string) => rows.filter((r) => (key === "returning" ? RETURNING.includes(typeGroup(r.patientType)) : typeGroup(r.patientType) === key)),
+    newPatients: () => sourceRows.filter((r) => patientSource.has(r.patient)),
+    sourceGroup: (key: string) => sourceRows.filter((r) => patientSource.has(r.patient) && sourceGroup(patientSource.get(r.patient)!) === key),
+    source: (label: string) => sourceRows.filter((r) => patientSource.get(r.patient) === label),
+    day: (date: Date) => rows.filter((r) => r.date && dayKey(r.date) === dayKey(date)),
+    service: (name: string) => rows.filter((r) => (name === "OTHER" ? !topServices.has(serviceOf(r)) : serviceOf(r) === name)),
+    category: (name: string) => rows.filter((r) => patients.get(r.patient)?.category === name),
+    physician: (name: string) => physicianRows.filter((r) => physicianKey(r.physician) === physicianKey(name)),
+    discounted: () => rows.filter((r) => r.discount > 0),
+  };
+
   return {
+    rowsFor, visitKey, hasTypeColumn, sourcedPatients: patientSource.size, sourcedRevenue,
+    types, returning: { patients: returningPatients.size, revenue: returningRevenue },
+    newPatients: typeMap.get("new")?.patients.size || 0,
     patients: patients.size, visits: visits.size, lineItems: rows.length, revenue, gross, discount,
     avgPerPatient: patients.size ? revenue / patients.size : 0, medianPerPatient: median(perPatient),
     minDate, maxDate, sources, groups, days, services, serviceLabel: hasServiceLine ? "service line" : "test / examination",
@@ -168,7 +264,7 @@ export type SalesSummary = ReturnType<typeof analyzeSales>;
 export function analyzeInquiries(rows: InquiryRow[]) {
   const booked = rows.filter((r) => r.booked).length;
   const served = rows.filter((r) => r.served).length;
-  const followUps = rows.filter((r) => !r.booked || r.noShow);
+  const followUps = rows.filter(needsFollowUp);
   const channelMap = new Map<string, { inquiries: number; booked: number; served: number }>();
   const branchMap = new Map<string, number>();
   for (const r of rows) {
@@ -180,7 +276,7 @@ export function analyzeInquiries(rows: InquiryRow[]) {
   const dates = rows.map((r) => r.date?.getTime()).filter((t): t is number => typeof t === "number");
   const priceMentions = followUps.filter((r) => /PRICE|FEE|COST|RATE|MAHAL|EXPENSIVE|HOW MUCH|MAGKANO/i.test(`${r.remarks} ${r.status}`)).length;
   return {
-    inquiries: rows.length, booked, served, followUps, priceMentions,
+    rows, inquiries: rows.length, booked, served, followUps, priceMentions,
     channels: Array.from(channelMap, ([channel, v]) => ({ channel, ...v })).sort((a, b) => b.inquiries - a.inquiries),
     branches: Array.from(branchMap, ([branch, inquiries]) => ({ branch, inquiries })).sort((a, b) => b.inquiries - a.inquiries),
     minDate: dates.length ? new Date(Math.min(...dates)) : null,
@@ -193,28 +289,31 @@ export type InquirySummary = ReturnType<typeof analyzeInquiries>;
 export function buildFindings(s: SalesSummary, q: InquirySummary | null): Finding[] {
   const findings: Finding[] = [];
   const top3 = s.physicians.slice(0, 3);
-  if (top3.length >= 2 && s.revenue > 0) {
+  if (top3.length >= 2 && s.sourcedRevenue > 0) {
     const value = top3.reduce((sum, p) => sum + p.revenue, 0);
-    const share = value / s.revenue;
+    const share = value / s.sourcedRevenue;
     findings.push({
       tone: share >= 0.25 ? "risk" : "watch", label: "Concentration risk", value: pct(share),
-      text: `of all revenue (${peso(value)}) came from just ${top3.length} referring physicians: ${listNames(top3.map((p) => surname(p.name)))}. ${share >= 0.25 ? "Losing one would be felt immediately." : "Referrals are reasonably spread."}`,
+      drill: () => ({ kind: "sales", title: `Top ${top3.length} referring physicians`, subtitle: top3.map((p) => p.name).join(", "), rows: top3.flatMap((p) => s.rowsFor.physician(p.name)) }),
+      text: `of new-patient revenue (${peso(value)}) came from just ${top3.length} referring physicians: ${listNames(top3.map((p) => surname(p.name)))}. ${share >= 0.25 ? "Losing one would be felt immediately." : "Referrals are reasonably spread."}`,
     });
   }
   const digital = s.groups.find((g) => g.key === "digital");
-  if (s.patients) {
+  if (s.sourcedPatients) {
     const best = s.sources.filter((src) => src.group === "digital").sort((a, b) => b.avg - a.avg)[0];
     findings.push({
-      tone: "watch", label: digital ? "Digital channels" : "No digital patients", value: `${count(digital?.patients || 0)} of ${count(s.patients)}`,
+      drill: digital ? () => ({ kind: "sales", title: "Digital (Google, Facebook, website)", subtitle: "New patients", rows: s.rowsFor.sourceGroup("digital") }) : undefined,
+      tone: "watch", label: digital ? "Digital channels" : "No digital patients", value: `${count(digital?.patients || 0)} of ${count(s.sourcedPatients)}`,
       text: digital
-        ? `patients came from ${DIGITAL_LABEL} (${pct(digital.revenue / s.revenue)} of revenue).${best ? ` ${best.source} patients spent ${peso(best.avg)} each vs. ${peso(s.avgPerPatient)} overall${best.patients < 5 ? `, but ${best.patients} patient${best.patients === 1 ? " is" : "s are"} too few to call it a trend` : ""}.` : ""}`
-        : `No patient in this period listed ${DIGITAL_LABEL} as their source.`,
+        ? `new patients came from ${DIGITAL_LABEL} (${pct(digital.revenue / s.sourcedRevenue)} of new-patient revenue).${best ? ` ${best.source} patients spent ${peso(best.avg)} each vs. ${peso(s.sourcedRevenue / s.sourcedPatients)} for all new patients${best.patients < 5 ? `, but ${best.patients} patient${best.patients === 1 ? " is" : "s are"} too few to call it a trend` : ""}.` : ""}`
+        : `No new patient in this period listed ${DIGITAL_LABEL} as their source.`,
     });
   }
   if (s.discount > 0) {
     const otherShare = s.gross ? s.otherDiscount / s.gross : 0;
     const statutoryRate = s.statutoryGross ? s.statutoryDiscount / s.statutoryGross : 0;
     findings.push({
+      drill: () => ({ kind: "sales", title: "Discounted items", rows: s.rowsFor.discounted() }),
       tone: otherShare > 0.02 ? "watch" : "ok", label: otherShare > 0.02 ? "Discretionary discounts" : s.otherDiscount > 0 ? "Discounts mostly statutory" : "Discounts are statutory", value: peso(s.discount),
       text: s.statutoryPatients
         ? `in discounts, ${pct(s.discount / s.gross)} of gross ${peso(s.gross)}. ${peso(s.statutoryDiscount)} went to ${count(s.statutoryPatients)} senior and PWD patients (${pct(statutoryRate)} off their bills)${s.otherDiscount > 0 ? `; ${peso(s.otherDiscount)} went to other patients and should have an approval trail.` : ". No discretionary discounting shows up in this period."}`
@@ -225,6 +324,7 @@ export function buildFindings(s: SalesSummary, q: InquirySummary | null): Findin
     const [a, b] = s.services;
     findings.push({
       tone: "ok", label: "Service mix", value: pct((a.revenue + b.revenue) / s.revenue),
+      drill: () => ({ kind: "sales", title: `${titleCase(a.name)} and ${titleCase(b.name)}`, rows: [...s.rowsFor.service(a.name), ...s.rowsFor.service(b.name)] }),
       text: `of revenue came from ${titleCase(a.name)} (${peso(a.revenue)}) and ${titleCase(b.name)} (${peso(b.revenue)}). These are the services patients come in for.`,
     });
   }
@@ -241,19 +341,24 @@ export function buildFindings(s: SalesSummary, q: InquirySummary | null): Findin
   if (q) {
     findings.push({
       tone: q.followUps.length ? "risk" : "ok", label: "Leads waiting", value: count(q.followUps.length),
+      drill: () => ({ kind: "inquiries", title: "Leads needing follow-up", rows: q.followUps }),
       text: q.followUps.length
         ? `concierge leads need follow-up (${count(q.followUps.filter((r) => !r.booked).length)} never booked, ${count(q.followUps.filter((r) => r.noShow).length)} no-show). Confirm each one was closed.`
         : "open concierge leads. Every inquiry in the log was booked and attended.",
     });
   }
-  const none = s.groups.find((g) => g.key === "none");
-  if (none && none.patients / s.patients >= 0.05) {
-    findings.push({ tone: "watch", label: "Source missing", value: pct(none.patients / s.patients, 0), text: `of patients (${count(none.patients)}) have no source recorded, so their revenue can't be credited to a channel.` });
+  if (s.newPatients && s.returning.patients && s.revenue) {
+    const share = s.returning.revenue / s.revenue;
+    findings.push({
+      drill: () => ({ kind: "sales", title: "Returning patients", subtitle: "Scheduled, Walk-in and HMO", rows: s.rowsFor.type("returning") }),
+      tone: "ok", label: "New vs. returning", value: `${count(s.newPatients)} / ${count(s.returning.patients)}`,
+      text: `new vs. returning patients (Scheduled, Walk-in, HMO). Returning patients brought ${pct(share)} of revenue (${peso(s.returning.revenue)}); new patients ${pct((s.types.find((t) => t.key === "new")?.revenue || 0) / s.revenue)}.`,
+    });
   }
   return findings;
 }
 
-/** Suggested decisions for the next leadership meeting. Marketing spend and acquisition cost live in the acquisition dashboard. */
+/** Suggested decisions for the next leadership meeting. Marketing spend and acquisition cost are on the Patient Acquisition Cost tab (lib/acquisition.ts). */
 export function buildDecisions(s: SalesSummary, q: InquirySummary | null): Decision[] {
   const decisions: Decision[] = [];
   const top = s.physicians.slice(0, 8);
@@ -262,15 +367,16 @@ export function buildDecisions(s: SalesSummary, q: InquirySummary | null): Decis
     decisions.push({
       decision: top.length < s.physicians.length ? `Assign a physician-relations owner for the top ${top.length} referring doctors` : `Assign a physician-relations owner for the ${top.length} referring doctors`,
       why: top.length < s.physicians.length
-        ? `They produced ${peso(value)}, which is ${pct(value / s.referralRevenue)} of referral revenue and ${pct(value / s.revenue)} of all revenue.`
-        : `Together they produced ${peso(value)}, ${pct(value / s.revenue)} of all revenue.`,
+        ? `They produced ${peso(value)}, which is ${pct(value / s.referralRevenue)} of referral revenue and ${pct(value / s.sourcedRevenue)} of new-patient revenue.`
+        : `Together they produced ${peso(value)}, ${pct(value / s.sourcedRevenue)} of new-patient revenue.`,
       measure: `Referral revenue holds at or above ${peso(s.referralRevenue)}; no top-${top.length} doctor drops off`,
     });
   }
-  if (!q || q.inquiries < s.patients * 0.5) {
+  const billed = s.newPatients || s.patients;
+  if (!q || q.inquiries < billed * 0.5) {
     decisions.push({
       decision: "Make concierge logging mandatory for every inquiry, at every branch",
-      why: q ? `Only ${count(q.inquiries)} inquiries were logged against ${count(s.patients)} patients billed. Conversion rates need real volume before they mean anything.` : "No concierge log was uploaded, so the dashboard can't see inquiries that never became paying patients.",
+      why: q ? `Only ${count(q.inquiries)} inquiries were logged against ${count(billed)} ${s.newPatients ? "new " : ""}patients billed. Conversion rates need real volume before they mean anything.` : "No concierge log was uploaded, so the dashboard can't see inquiries that never became paying patients.",
       measure: "Inquiries logged ≈ patients billed, with every branch reporting",
     });
   }
@@ -297,14 +403,6 @@ export function buildDecisions(s: SalesSummary, q: InquirySummary | null): Decis
       decision: "Require approval for discounts outside senior and PWD",
       why: `${peso(s.otherDiscount)} (${pct(s.otherDiscount / s.gross)} of gross) was discounted for patients who are not senior or PWD.`,
       measure: "Discretionary discounts below 2% of gross, each with an approver",
-    });
-  }
-  const none = s.groups.find((g) => g.key === "none");
-  if (none && none.patients / s.patients >= 0.05) {
-    decisions.push({
-      decision: "Make the Source field mandatory at registration",
-      why: `${count(none.patients)} patients (${peso(none.revenue)}) have no source, so their revenue can't be credited to a channel.`,
-      measure: "No-source patients below 2%",
     });
   }
   return decisions.slice(0, 5);

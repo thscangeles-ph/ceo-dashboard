@@ -1,0 +1,46 @@
+{
+  "name": "thsc-summary-dashboard-desktop",
+  "productName": "THSC Summary Dashboard",
+  "version": "1.0.0",
+  "description": "THSC Summary Dashboard for Windows: the live dashboard in its own window, with the same accounts and shared data.",
+  "author": "The Heart Specialists Clinic",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icons": "python3 make-icon.py",
+    "build:win": "electron-builder --win dir --x64 && makensis -V2 -DVERSION=$npm_package_version installer.nsi"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8",
+    "resedit": "1.7.2"
+  },
+  "build": {
+    "appId": "ph.thsc.summarydashboard",
+    "productName": "THSC Summary Dashboard",
+    "copyright": "The Heart Specialists Clinic",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "offline.html",
+      "build/icon.png"
+    ],
+    "afterPack": "./set-exe-icon.js",
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    }
+  }
+}
