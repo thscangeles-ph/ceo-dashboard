@@ -41,8 +41,23 @@ let client: SupabaseClient | null = null;
 export function getCloud() {
   if (!URL || !KEY || configProblem || typeof window === "undefined") return null;
   const storageKey = `sb-${new globalThis.URL(URL).hostname.split(".")[0]}-auth-token`;
-  client ??= createClient(`${window.location.origin}${PROXY}`, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey } });
+  client ??= createClient(`${window.location.origin}${PROXY}`, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey }, global: { fetch: viaAppOrDirect } });
   return client;
+}
+
+/**
+ * Sends a request through the app's address, and only if Vercel itself couldn't reach Supabase (its
+ * x-vercel-error header, e.g. a DNS lookup it still remembers as failed after the project was paused, or no
+ * answer at all) tries the same request directly. Either way works; the direct try is only a backup.
+ */
+async function viaAppOrDirect(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === "string" ? input : input instanceof globalThis.URL ? input.href : input.url;
+  const proxied = await fetch(input, init).catch(() => null);
+  if (proxied && !(proxied.status >= 500 && proxied.headers.get("x-vercel-error"))) return proxied;
+  const prefix = `${window.location.origin}${PROXY}`;
+  if (!URL || !url.startsWith(prefix)) { if (proxied) return proxied; throw new TypeError("Failed to fetch"); }
+  try { return await fetch(URL + url.slice(prefix.length), init); }
+  catch (e) { if (proxied) return proxied; throw e; }
 }
 
 /**
