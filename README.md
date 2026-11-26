@@ -46,7 +46,7 @@ Reports that list patients are marked confidential in the footer of every page. 
 - The sheet's questions aren't hard-coded: new questions, services or answer choices added to the form are picked up automatically. Columns with names, contact numbers or email addresses would be recognised and never shown.
 - New responses appear within about two minutes while the tab is open (or click **Refresh**). Admin, ManCom, Doctors and Marketing can open it; Concierge can't. It needs accounts, and the sheet is read on the server with a Google service account (see **Deploy to Vercel**), so it stays private.
 
-**Patient Feedback → Monthly Summary:** a short, one-screen view of one month next to the month before, for the In-Person or QR survey: responses, Satisfied, Very Satisfied and Recommendation rate, each with its change (▲ ▼) from the previous month, and the number of comments; the By service chart for both months side by side, with the services in the same order; a "What changed" table of each service's % satisfied; the top 3 things to improve that month; and every comment of both months side by side, colored by type.
+**Patient Feedback → Monthly Summary:** a short, one-screen view of one month next to the month before, for the In-Person or QR survey: responses, Satisfied, Very Satisfied and Recommendation rate, each with its change (▲ ▼) from the previous month, and the number of comments; the By service chart for both months side by side, with the services in the same order; a "What changed" table of each service's % satisfied; and every comment of both months side by side, colored by type.
 
 **Podcast Tracker & Scheduler** (formerly the separate THSC Podcast Tracker; YouTube only), in its own **Podcast** section of the sidebar:
 
