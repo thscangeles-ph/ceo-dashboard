@@ -205,7 +205,7 @@ export function FeedbackDashboard({ load, name, intro, source, loadTags, saveTag
 
           <div className="kpis">
             <div className="kpi"><div className="label">Responses</div><div className="value">{num(t.responses)}</div><div className="note">{a.previous ? `${num(a.previous.responses)} in the previous period` : `${num(survey.responses.length)} in the sheet${a.undated ? ` · ${a.undated} without a visit date` : ""}`}</div></div>
-            <div className="kpi accent"><div className="label">Satisfied</div><div className="value">{pctText(t.csat, 1)}</div><div className="note">{delta !== null ? `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} pts vs previous period` : "Very Satisfied or Satisfied ratings"}</div></div>
+            <div className="kpi"><div className="label">Satisfied</div><div className="value">{pctText(t.csat, 1)}</div><div className="note">{delta !== null ? `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} pts vs previous period` : "Very Satisfied or Satisfied ratings"}</div></div>
             <div className="kpi"><div className="label">Very satisfied</div><div className="value">{pctText(t.verySatisfied, 1)}</div><div className="note">Average {t.average === null ? "—" : t.average.toFixed(2)} of 5</div></div>
             <div className="kpi"><div className="label">Recommendation rate</div><div className="value">{pctText(t.recommend, 1)}</div><div className="note">{t.recAnswers ? `${t.rec.Yes} yes · ${t.rec.Maybe} maybe · ${t.rec.No} no` : "No answers yet"}</div></div>
             <div className="kpi"><div className="label">Needs improvement</div><div className="value">{num(improvementCount)}</div><div className="note">{improvementCount ? `Suggestions for ${improvements.length} department${improvements.length === 1 ? "" : "s"}, ${improvements[0].department} first` : "Nothing stands out"}</div></div>
@@ -545,12 +545,12 @@ const pointsFor = (labels?: Record<number, string>) => [5, 4, 3, 2, 1].map((p) =
 const shortMonth = (key: string) => monthText(key, true).split(" ")[0];
 
 /** A figure for this month next to last month's, with the change: up is better for every figure here. */
-function CompareCard({ label, cur, prev, percent, prevLabel, accent }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string; accent?: boolean }) {
+function CompareCard({ label, cur, prev, percent, prevLabel }: { label: string; cur: number | null; prev: number | null; percent?: boolean; prevLabel: string }) {
   const show = (v: number | null) => (v === null ? "—" : percent ? pctText(v, 1) : num(v));
   const change = cur !== null && prev !== null ? (percent ? (cur - prev) * 100 : cur - prev) : null;
   const tone = change === null || Math.abs(change) < (percent ? 0.05 : 0.5) ? "same" : change > 0 ? "up" : "down";
   return (
-    <div className={`kpi fb-cmp-kpi${accent ? " accent" : ""}`}>
+    <div className="kpi fb-cmp-kpi">
       <div className="label">{label}</div>
       <div className="value">{show(cur)}</div>
       <div className={`fb-change ${tone}`}>
@@ -653,7 +653,7 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
         <>
           <div className="kpis">
             <CompareCard label="Responses" cur={cur.totals.responses} prev={prev?.totals.responses ?? null} prevLabel={prevName} />
-            <CompareCard label="Satisfied" cur={cur.totals.csat} prev={prev?.totals.csat ?? null} prevLabel={prevName} percent accent />
+            <CompareCard label="Satisfied" cur={cur.totals.csat} prev={prev?.totals.csat ?? null} prevLabel={prevName} percent />
             <CompareCard label="Very satisfied" cur={cur.totals.verySatisfied} prev={prev?.totals.verySatisfied ?? null} prevLabel={prevName} percent />
             <CompareCard label="Recommendation rate" cur={cur.totals.recommend} prev={prev?.totals.recommend ?? null} prevLabel={prevName} percent />
             <div className="kpi fb-cmp-kpi"><div className="label">Comments</div><div className="value">{num(cur.comments.length)}</div><div className="fb-change same">All listed below, next to {prevName}&apos;s</div></div>
