@@ -246,3 +246,65 @@ export async function feedbackReport(a: FeedbackSummary, survey: Survey, o: { na
   }
   r.save(`THSC Patient Feedback ${o.name} ${a.period ? `${a.period.from} to ${a.period.to}` : fileRange(new Date(), new Date())}.pdf`);
 }
+
+/** Patient Feedback → Monthly Summary: one month next to the month before, as on the screen. */
+type ServiceRow = FeedbackSummary["services"][number];
+export async function feedbackMonthlySummaryReport(o: {
+  survey: string; month: string; prevMonth: string; cur: FeedbackSummary; prev: FeedbackSummary | null;
+  services: string[]; labels: Record<number, string>;
+  comments: { month: string; type: CommentType; service: string; visit: string | null; text: string }[];
+}) {
+  const curName = monthText(o.month, true), prevName = monthText(o.prevMonth, true);
+  const m = curName.split(" ")[0], pm = prevName.split(" ")[0];
+  const r = await createReport({ title: `Patient Feedback Monthly Summary: ${o.survey}`, period: `${curName} compared with ${prevName}`, confidential: o.comments.length > 0 });
+  const t = o.cur.totals, p = o.prev?.totals;
+  const change = (cur: number | null, prev: number | null | undefined, percent: boolean) => {
+    if (cur === null || prev === null || prev === undefined) return `No ${pm} figures to compare`;
+    const d = percent ? (cur - prev) * 100 : cur - prev;
+    if (Math.abs(d) < (percent ? 0.05 : 0.5)) return `Same as ${pm}`;
+    return `${d > 0 ? "Up" : "Down"} ${percent ? `${Math.abs(d).toFixed(1)} pts` : count(Math.abs(d))} vs ${pm} (${percent ? pctText(prev, 1) : count(prev)})`;
+  };
+  r.kpis([
+    { label: "Responses", value: count(t.responses), note: change(t.responses, p?.responses, false) },
+    { label: "Satisfied", value: pctText(t.csat, 1), note: change(t.csat, p?.csat, true) },
+    { label: "Very satisfied", value: pctText(t.verySatisfied, 1), note: change(t.verySatisfied, p?.verySatisfied, true) },
+    { label: "Recommendation rate", value: pctText(t.recommend, 1), note: change(t.recommend, p?.recommend, true) },
+    { label: "Comments", value: count(o.cur.comments.length), note: `${pm}: ${count(o.prev?.comments.length ?? 0)}` },
+  ]);
+
+  // The answers of each service in both months, as on the screen's two charts.
+  const COLORS: Record<number, [number, number, number]> = { 5: [46, 125, 50], 4: [156, 204, 101], 3: [244, 196, 48], 2: [211, 47, 47], 1: [127, 29, 29] };
+  const sum = (list: ServiceRow[]) => { const out: Record<number, number> = {}; list.forEach((x) => x.questions.forEach((q) => Object.entries(q.counts).forEach(([k, n]) => { out[Number(k)] = (out[Number(k)] || 0) + n; }))); return out; };
+  const bar = (label: string, counts: Record<number, number>, csat: number | null, responses: number, bold = false) => ({ label, bold, parts: [5, 4, 3, 2, 1].map((pt) => ({ value: counts[pt] || 0, color: COLORS[pt] })), display: `${pctText(csat)} satisfied · ${count(responses)}` });
+  r.heading(`By service: ${pm} vs ${m}`, "Each service's ratings from Very Satisfied to Very Dissatisfied (N/A left out), last month above this month (in bold). At the end: % satisfied (Very Satisfied or Satisfied) and responses.");
+  r.legend([5, 4, 3, 2, 1].map((pt) => ({ label: o.labels[pt] ?? String(pt), color: COLORS[pt] })));
+  const rows: (ReturnType<typeof bar> | { group: string })[] = [];
+  if (o.services.length > 1) {
+    rows.push({ group: "All services" });
+    if (o.prev) rows.push(bar(pm, sum(o.prev.services), o.prev.totals.csat, o.prev.totals.responses));
+    rows.push(bar(m, sum(o.cur.services), t.csat, t.responses, true));
+  }
+  o.services.forEach((name) => {
+    const pv = o.prev?.services.find((x) => x.section.name === name), cv = o.cur.services.find((x) => x.section.name === name);
+    rows.push({ group: name });
+    if (pv) rows.push(bar(pm, sum([pv]), pv.csat, pv.responses));
+    else if (o.prev) rows.push({ ...bar(pm, {}, null, 0), display: "no responses" });
+    if (cv) rows.push(bar(m, sum([cv]), cv.csat, cv.responses, true));
+    else rows.push({ ...bar(m, {}, null, 0, true), display: "no responses" });
+  });
+  r.stacked(rows);
+
+  r.heading("What changed", "% satisfied and responses for each service.");
+  r.table(["Service", pm, m, "Change"], o.services.map((name) => {
+    const pv = o.prev?.services.find((x) => x.section.name === name), cv = o.cur.services.find((x) => x.section.name === name);
+    const d = cv?.csat != null && pv?.csat != null ? (cv.csat - pv.csat) * 100 : null;
+    return [name, pv ? `${pctText(pv.csat)} · ${count(pv.responses)}` : "-", cv ? `${pctText(cv.csat)} · ${count(cv.responses)}` : "-", d === null ? (cv && !pv ? "new" : "-") : Math.abs(d) < 0.5 ? "same" : `${d > 0 ? "up" : "down"} ${Math.abs(d).toFixed(0)} pts`];
+  }), { right: [1, 2, 3] });
+
+  r.heading(`Comments: ${pm} vs ${m}`, "Everything patients wrote (N/A left out), with each comment's type as shown on the dashboard.");
+  if (o.comments.length) {
+    const label = (x: CommentType) => COMMENT_TYPES.find((c) => c.id === x)!.label;
+    r.table(["Month", "Type", "Service", "Comment"], o.comments.map((c) => [monthText(c.month, true).split(" ")[0], label(c.type), c.service, c.text]), { fontSize: 7.5, widths: { 0: 22, 1: 24, 2: 44 } });
+  } else r.note("No comments in either month.");
+  r.save(`THSC Patient Feedback Monthly Summary ${o.survey} ${o.month}.pdf`);
+}
