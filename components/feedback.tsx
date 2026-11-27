@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Eye, Info, RefreshCw, Search, Sheet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PdfButton } from "@/components/pdf-button";
-import { feedbackReport } from "@/lib/reports";
+import { feedbackMonthlySummaryReport, feedbackReport } from "@/lib/reports";
 import type { FeedbackSheet, Filters } from "@/lib/feedback";
 import type { CommentType, FeedbackSummary } from "@/lib/feedback";
 import { analyzeFeedback, buildSurvey, COMMENT_TYPES, commentKey, dayText, basisText, feedbackFindings, guessCommentType, monthText, pctText, shortNote, suggestImprovements } from "@/lib/feedback";
@@ -623,6 +623,12 @@ export function FeedbackMonthlySummary({ sources, loadTags }: {
           <h1>Patient Feedback: Monthly Summary</h1>
           <p className="sub">One month at a glance, next to the month before: the main figures, each service&apos;s ratings and what patients wrote</p>
           <div className="crm-actions no-print">
+            {cur && data && current && <PdfButton make={() => feedbackMonthlySummaryReport({
+              survey: source.name, month: current, prevMonth: data.prevKey, cur, prev: prev ?? null, services: serviceNames,
+              labels: Object.fromEntries(pointsFor(labels).map((x) => [x.p, x.label])),
+              comments: [...data.prevComments.map((c) => ({ ...c, month: data.prevKey })), ...data.curComments.map((c) => ({ ...c, month: current }))]
+                .map((c) => ({ month: c.month, type: c.type, service: c.service, visit: c.response.visit, text: c.text })),
+            })} />}
             <button type="button" className="btn btn-outline" onClick={() => void refresh(true)} disabled={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} />{loading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </div>

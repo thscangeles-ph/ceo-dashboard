@@ -118,6 +118,41 @@ export async function createReport(opts: ReportOptions) {
       });
       y = lastY() + 6;
     },
+    /** A colour legend: a small square and a name for each colour. */
+    legend(items: { label: string; color: [number, number, number] }[]) {
+      ensure(6);
+      let x = M;
+      doc.setFont("helvetica", "normal").setFontSize(7.5);
+      items.forEach((item) => {
+        doc.setFillColor(...item.color).rect(x, y - 2.4, 2.8, 2.8, "F");
+        doc.setTextColor(...SOFT).text(pdfText(item.label), x + 4, y);
+        x += 6 + doc.getTextWidth(pdfText(item.label)) + 4;
+      });
+      y += 5;
+    },
+    /** 100% stacked horizontal bars (e.g. each service's answers), with a note at the end of each bar. */
+    stacked(items: ({ group: string } | { label: string; parts: { value: number; color: [number, number, number] }[]; display: string; bold?: boolean })[]) {
+      const labelW = 30, valueW = 34, trackW = W - 2 * M - labelW - valueW - 4;
+      items.forEach((item, i) => {
+        if ("group" in item) {
+          // A group name (e.g. the service) on its own line, kept with at least its first bar.
+          ensure(14);
+          if (i) y += 1.5;
+          doc.setFont("helvetica", "bold").setFontSize(8.5).setTextColor(...INK).text(pdfText(item.group), M, y + 3.2);
+          y += 5.2;
+          return;
+        }
+        ensure(7);
+        doc.setFont("helvetica", item.bold ? "bold" : "normal").setFontSize(8).setTextColor(...INK).text(doc.splitTextToSize(pdfText(item.label), labelW - 2)[0], M, y + 3.2);
+        const total = item.parts.reduce((n, part) => n + part.value, 0);
+        doc.setFillColor(...TINT).rect(M + labelW, y, trackW, 4, "F");
+        let x = M + labelW;
+        if (total) item.parts.forEach((part) => { const w = (part.value / total) * trackW; if (w > 0) { doc.setFillColor(...part.color).rect(x, y, w, 4, "F"); x += w; } });
+        doc.setFont("helvetica", "normal").setFontSize(7.8).setTextColor(...SOFT).text(pdfText(item.display), W - M, y + 3.2, { align: "right" });
+        y += 6.2;
+      });
+      y += 2;
+    },
     /** Findings as label · value, then the explanation. */
     findings(items: { label: string; value: string; text: string }[]) {
       items.forEach((f) => {
@@ -137,7 +172,12 @@ export async function createReport(opts: ReportOptions) {
         doc.setPage(i);
         doc.setDrawColor(...LINE).setLineWidth(0.2).line(M, H - 11, W - M, H - 11);
         doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(...SOFT);
-        doc.text(pdfText(`THSC Summary Dashboard · ${opts.title}${opts.confidential ? " · CONFIDENTIAL: contains patient information (Data Privacy Act of 2012)" : ""}`), M, H - 7);
+        // The privacy notice comes first so a long title can't push it off the line; the text stops before the page number.
+        const footer = pdfText(`${opts.confidential ? "CONFIDENTIAL: contains patient information (Data Privacy Act of 2012) · " : ""}THSC Summary Dashboard · ${opts.title}`);
+        const room = W - 2 * M - 24;
+        let shown = footer;
+        while (shown.length > 10 && doc.getTextWidth(shown) > room) shown = shown.slice(0, -2);
+        doc.text(shown === footer ? footer : `${shown.trimEnd()}...`, M, H - 7);
         doc.text(`Page ${i} of ${pages}`, W - M, H - 7, { align: "right" });
       }
       doc.save(filename);
